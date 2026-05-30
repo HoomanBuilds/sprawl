@@ -314,10 +314,12 @@ function CameraFocus({
   buildings,
   focusedBuilding,
   controlsRef,
+  autoOrbit,
 }: {
   buildings: CityBuilding[];
   focusedBuilding: number | null;
   controlsRef: React.RefObject<any>;
+  autoOrbit?: boolean;
 }) {
   const { camera } = useThree();
   const startPos = useRef(new THREE.Vector3());
@@ -331,6 +333,8 @@ function CameraFocus({
   buildingsRef.current = buildings;
 
   useEffect(() => {
+    if (autoOrbit && controlsRef.current) controlsRef.current.autoRotate = true;
+
     if (focusedBuilding == null) {
       if (controlsRef.current) controlsRef.current.autoRotate = true;
       return;
@@ -353,8 +357,8 @@ function CameraFocus({
 
     progress.current = 0;
     active.current = true;
-    if (controlsRef.current) controlsRef.current.autoRotate = false;
-  }, [focusedBuilding, camera, controlsRef]);
+    if (controlsRef.current && !autoOrbit) controlsRef.current.autoRotate = false;
+  }, [focusedBuilding, camera, controlsRef, autoOrbit]);
 
   useFrame((_, delta) => {
     if (!active.current) return;
@@ -392,9 +396,11 @@ function Ground({ color, grid1, grid2 }: { color: string; grid1: string; grid2: 
 function OrbitScene({
   buildings,
   focusedBuilding,
+  autoOrbit,
 }: {
   buildings: CityBuilding[];
   focusedBuilding: number | null;
+  autoOrbit?: boolean;
 }) {
   const controlsRef = useRef<any>(null);
   const { camera } = useThree();
@@ -407,7 +413,7 @@ function OrbitScene({
 
   return (
     <>
-      <CameraFocus buildings={buildings} focusedBuilding={focusedBuilding} controlsRef={controlsRef} />
+      <CameraFocus buildings={buildings} focusedBuilding={focusedBuilding} controlsRef={controlsRef} autoOrbit={autoOrbit} />
       <OrbitControls
         ref={controlsRef}
         enableDamping
@@ -455,6 +461,7 @@ interface CityCanvasProps {
   holdRise?: boolean;
   introMode?: boolean;
   onIntroEnd?: () => void;
+  autoOrbit?: boolean;
 }
 
 export default function CityCanvas({
@@ -469,6 +476,7 @@ export default function CityCanvas({
   holdRise,
   introMode,
   onIntroEnd,
+  autoOrbit,
 }: CityCanvasProps) {
   const t = THEMES[theme] ?? THEMES[0];
   const showPerf = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("perf");
@@ -529,7 +537,7 @@ export default function CityCanvas({
       {introMode && <IntroFlyover onEnd={onIntroEnd ?? (() => {})} />}
 
       {!introMode && (
-        <OrbitScene buildings={buildings} focusedBuilding={focusedBuilding ?? null} />
+        <OrbitScene buildings={buildings} focusedBuilding={focusedBuilding ?? null} autoOrbit={autoOrbit} />
       )}
 
       <Ground key={`ground-${theme}`} color={t.groundColor} grid1={t.grid1} grid2={t.grid2} />
