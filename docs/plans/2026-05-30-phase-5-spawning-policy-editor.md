@@ -2,6 +2,38 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> ## PRE-IMPLEMENTATION CORRECTIONS (authoritative — overrides task bodies below)
+> A readiness audit (against the live codebase + erc-8004-tee-agent reference) found these issues. Build against THESE corrections, not the original task text:
+>
+> 1. **ethers v6, not v5.** The whole codebase uses ethers v6. Use flat imports (`Wallet`, `Contract`, `JsonRpcProvider` from `"ethers"`), `Wallet.createRandom()`, `new Contract(...)`. NEVER `ethers.utils.*`, `ethers.providers.*`, or `ethers.BigNumber`.
+>
+> 2. **SKIP Task 1** (`030_agent_wallets.sql`). The `agent_wallets` table already exists from Phase 2 migration `006_agent_wallets.sql` (identical GCM schema) and is already pushed to Supabase. Re-creating it errors.
+>
+> 3. **SKIP Task 3** (`auth.ts`). Phase 4 already created `frontend/src/lib/auth.ts` with `getAuthenticatedAddress()` + `getSessionData()`. Do NOT overwrite. The spawn route uses `getAuthenticatedAddress()` directly.
+>
+> 4. **SKIP Task 13** (`agent-wallet.ts`). Phase 2's `frontend/src/lib/execution/wallet-manager.ts` already provides `getAgentWallet(agentId)` + `createAgentWallet(agentId)`. Use it.
+>
+> 5. **Task 2 (`crypto.ts`) — match wallet-manager exactly or skip.** wallet-manager.ts uses `Buffer.from(KEY,'hex')` (raw 32-byte hex key) and `randomBytes(12)` (12-byte IV). The plan's sha256-derivation + 16-byte IV would make spawn-encrypted wallets undecryptable by the engine. PREFERRED: skip a separate crypto.ts; the spawn route calls `createAgentWallet(agentId)` from wallet-manager.ts (which already generates + encrypts + stores). `.env` `BACKEND_ENCRYPTION_KEY` is a 64-char hex string.
+>
+> 6. **UNIFIED IDENTITY — the agent_id IS the ERC-8004 tokenId.** `agents.agent_id` has NO default (INTEGER UNIQUE NOT NULL), so an insert without it throws. Fix by reordering the spawn flow so one ID flows everywhere:
+>    - a. Generate agent wallet → `agentAddress` (don't store yet)
+>    - b. `IdentityRegistry.register(agentURI)` signed by **deployer** → parse Transfer event via `iface.parseLog(log)` → `tokenId = Number(parsed.args.tokenId)`. The agentURI = `${NEXT_PUBLIC_APP_URL}/api/agent/registration.json?wallet=${agentAddress}` (we don't know tokenId yet).
+>    - c. Insert `agents` row with **`agent_id: tokenId`**, `wallet_address: agentAddress`, owner, name, persona, strategy_type, policy_config.
+>    - d. Store encrypted wallet: write the agent wallet to `agent_wallets` with `agent_id: tokenId` (reuse wallet-manager's encrypt or call a variant that takes a pre-generated wallet — see note).
+>    - e. `AgentFaucet.fundNewAgent(agentAddress)` signed by deployer.
+>    - f. `CityState.spawnAgent(tokenId, agentAddress, strategyType)` signed by deployer.
+>    - No separate `erc8004_token_id` column needed — `agent_id` already equals the tokenId. (`createAgentWallet` in wallet-manager generates its own wallet; for this flow we need to persist a wallet we already generated — add a `storeAgentWallet(agentId, wallet)` export to wallet-manager, or generate the wallet inside step d and use its address for b/e/f by doing d before b.)
+>
+>    **Simplest concrete order:** generate wallet (a) → register (b) → insert agents (c) → store encrypted wallet (d) → fund (e) → spawnAgent (f).
+>
+> 7. **ABI imports.** `@/constants/abis` does NOT exist. Use `import CityStateABI from '@/constants/abi/CityState.json'` and access `CityStateABI.abi` (Hardhat artifact format). For ERC-8004, use an inline ABI fragment (no ABI file): `['function register(string) returns (uint256)', 'event Transfer(address indexed,address indexed,uint256 indexed)']`.
+>
+> 8. **Gas/signing:** the **deployer wallet** (`getDeployerWallet()`, `BACKEND_PRIVATE_KEY`) signs ALL three on-chain txs. The deployer MUST be the same address that deployed AgentFaucet + CityState (both have `onlyOwner` guards). The agent's own wallet needs no MNT. The ERC-8004 NFT is owned by the deployer (msg.sender) — Phase 7 must NOT use `ownerOf` to link identity to the agent wallet.
+>
+> 9. **`withTxLock` is a no-op on Vercel** (file-system lock, ephemeral containers). For the spawn route, manage the deployer nonce explicitly (read pending nonce from provider, pass `{ nonce }` to each tx sequentially) to avoid collisions when two users spawn at once.
+>
+> 10. **registration.json route (Task 7):** support BOTH `/api/agent/[agentId]/registration.json` AND a `?wallet=` query lookup (the agentURI in step 6b uses the wallet form before tokenId exists). Next.js 16: `params` is a Promise — `await params`.
+
 > **Wallet creation consistency note:** The spawn route (`POST /api/agent/spawn`) in this phase is the CANONICAL wallet creation path. It generates a new `ethers.Wallet.createRandom()`, encrypts the private key with AES-256-GCM, and stores it in `agent_wallets`. Phase 2's wallet-manager (`frontend/src/lib/wallet-manager.ts`) is a recovery helper only — it reads existing wallets from the `agent_wallets` table and decrypts them for the engine tick loop. It does NOT create new wallets.
 
 **Goal:** Build the complete agent spawning flow (wallet creation, on-chain registration, token funding) and the policy editor UI (strategy presets + custom rule builder). After this phase, a user can connect their wallet, spawn an autonomous agent with a chosen strategy, and customize its trading rules.
