@@ -462,6 +462,7 @@ interface CityCanvasProps {
   introMode?: boolean;
   onIntroEnd?: () => void;
   autoOrbit?: boolean;
+  contained?: boolean;
 }
 
 export default function CityCanvas({
@@ -477,6 +478,7 @@ export default function CityCanvas({
   introMode,
   onIntroEnd,
   autoOrbit,
+  contained,
 }: CityCanvasProps) {
   const t = THEMES[theme] ?? THEMES[0];
   const showPerf = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("perf");
@@ -509,7 +511,11 @@ export default function CityCanvas({
       camera={{ position: [-400, 450, -600], fov: 55, near: 0.5, far: 15000 }}
       dpr={dpr}
       gl={{ antialias: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
-      style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
+      style={
+        contained
+          ? { position: "absolute", inset: 0, width: "100%", height: "100%" }
+          : { position: "fixed", inset: 0, width: "100vw", height: "100vh" }
+      }
     >
       {showPerf && <Stats />}
       <CityExposure cityEnergy={cityEnergy ?? 1} />

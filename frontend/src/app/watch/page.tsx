@@ -113,11 +113,11 @@ export default function WatchPage() {
 
       <div className="watch-grid">
         <div className="watch-feed border-r border-[color:var(--color-sprawl-accent)]/10 bg-[rgba(13,13,15,0.85)]">
-          <DecisionFeed />
+          <DecisionFeed contained />
         </div>
 
         <div className="watch-city bg-black">
-          <CityCanvas buildings={buildings} autoOrbit theme={3} />
+          <CityCanvas buildings={buildings} autoOrbit contained theme={3} />
         </div>
 
         <div className="watch-stats border-l border-[color:var(--color-sprawl-accent)]/10 bg-[rgba(13,13,15,0.85)]">
@@ -131,7 +131,7 @@ export default function WatchPage() {
             </h3>
           </div>
           <div className="p-2">
-            <MiniLeaderboard onSelectAgent={() => {}} />
+            <MiniLeaderboard contained onSelectAgent={() => {}} />
           </div>
         </div>
       </div>

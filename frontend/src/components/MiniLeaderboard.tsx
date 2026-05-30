@@ -27,7 +27,7 @@ const MODES: LeaderboardMode[] = [
   {
     label: "$SPRAWL Earned",
     field: "sprawl_lifetime_earned",
-    format: (v) => v.toLocaleString(),
+    format: (v) => (v / 1e18).toLocaleString(),
   },
   {
     label: "Level",
@@ -51,9 +51,10 @@ const REFETCH_MS = 15_000;
 
 interface MiniLeaderboardProps {
   onSelectAgent?: (agentId: number) => void;
+  contained?: boolean;
 }
 
-export default function MiniLeaderboard({ onSelectAgent }: MiniLeaderboardProps) {
+export default function MiniLeaderboard({ onSelectAgent, contained }: MiniLeaderboardProps) {
   const [modeIndex, setModeIndex] = useState(0);
   const [rows, setRows] = useState<AgentRow[]>([]);
 
@@ -87,7 +88,13 @@ export default function MiniLeaderboard({ onSelectAgent }: MiniLeaderboardProps)
   }, []);
 
   return (
-    <div className="fixed left-4 top-4 z-40 w-[240px] select-none font-mono">
+    <div
+      className={
+        contained
+          ? "h-full w-full select-none font-mono p-2 overflow-y-auto"
+          : "fixed left-4 top-4 z-40 w-[240px] select-none font-mono"
+      }
+    >
       <div
         className="rounded-md border bg-black/80 backdrop-blur-sm"
         style={{ borderColor: "rgba(0,255,136,0.25)" }}
