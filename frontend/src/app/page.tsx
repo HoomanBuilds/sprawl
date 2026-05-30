@@ -11,6 +11,7 @@ import ThemeSwitcher from "@/components/ThemeSwitcher";
 import MiniLeaderboard from "@/components/MiniLeaderboard";
 import MiniMap from "@/components/MiniMap";
 import BuildingInspector from "@/components/BuildingInspector";
+import { SprawlPriceSparkline } from "@/components/SprawlPriceSparkline";
 import LoadingScreen, { type LoadingStage } from "@/components/LoadingScreen";
 import { useAgentPresence } from "@/hooks/useAgentPresence";
 
@@ -99,6 +100,10 @@ function CityPage() {
         introMode={introMode}
         onIntroEnd={() => setIntroMode(false)}
       />
+
+      <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
+        <SprawlPriceSparkline />
+      </div>
 
       {/* Wallet connect (RainbowKit) */}
       <div className="fixed left-4 bottom-4 z-50">

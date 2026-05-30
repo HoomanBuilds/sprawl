@@ -4,6 +4,7 @@ import { CONTRACTS, TOKEN_SYMBOLS } from '../config';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import SprawlTokenABI from '@/constants/abi/SprawlToken.json';
 import { withTxLock } from '../execution/tx-lock';
+import { supabaseAdmin } from '../supabase';
 import type { CoinGeckoPrice } from '@/types/market';
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,21 @@ interface ArbOpportunity {
 async function getDexPrice(dex: Contract, tokenAddress: string): Promise<number> {
     const priceRaw = await dex.getPrice(tokenAddress, CONTRACTS.sUSDC);
     return parseFloat(formatEther(priceRaw));
+}
+
+async function recordSprawlSnapshot(): Promise<void> {
+    try {
+        const provider = getMantleSepoliaProvider();
+        const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, provider);
+        const price = await getDexPrice(dex, CONTRACTS.SPRAWL);
+        await supabaseAdmin.from('price_snapshots').insert({
+            pool_id: 'SPRAWL_sUSDC',
+            price,
+            source: 'market_maker',
+        });
+    } catch (err: any) {
+        console.error(`[ArbBot] Snapshot failed: ${err.message}`);
+    }
 }
 
 async function findArbOpportunities(): Promise<ArbOpportunity[]> {
@@ -300,6 +316,8 @@ export async function runArbCycle(): Promise<void> {
     } catch (err: any) {
         console.error(`[ArbBot] Noise trades failed: ${err.message}`);
     }
+
+    await recordSprawlSnapshot();
 }
 
 // ---------------------------------------------------------------------------
