@@ -5,6 +5,11 @@ import dynamic from "next/dynamic";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import type { CityBuilding } from "@/types/city";
 import DecisionFeed from "@/components/DecisionFeed";
+import ActivityTicker from "@/components/ActivityTicker";
+import AgentSearch from "@/components/AgentSearch";
+import ThemeSwitcher from "@/components/ThemeSwitcher";
+import MiniLeaderboard from "@/components/MiniLeaderboard";
+import MiniMap from "@/components/MiniMap";
 import BuildingInspector from "@/components/BuildingInspector";
 import LoadingScreen, { type LoadingStage } from "@/components/LoadingScreen";
 import { useAgentPresence } from "@/hooks/useAgentPresence";
@@ -100,7 +105,16 @@ function CityPage() {
         <ConnectButton />
       </div>
 
+      <AgentSearch onSelectAgent={setSelectedAgentId} />
+      <ThemeSwitcher theme={theme} onThemeChange={setTheme} />
+      <MiniLeaderboard onSelectAgent={setSelectedAgentId} />
+      <MiniMap
+        buildings={buildings}
+        focusedAgentId={selectedAgentId}
+        onSelectAgent={setSelectedAgentId}
+      />
       <DecisionFeed />
+      <ActivityTicker />
 
       {selectedAgentId != null && (
         <BuildingInspector
