@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import type { CityBuilding } from "@/types/city";
 import DecisionFeed from "@/components/DecisionFeed";
@@ -109,6 +110,22 @@ function CityPage() {
       <div className="fixed left-4 bottom-4 z-50">
         <ConnectButton />
       </div>
+
+      {/* Page nav — bottom-right (free corner) */}
+      <nav className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
+        <Link
+          href="/leaderboard"
+          className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border-2 border-[color:var(--color-sprawl-accent)] bg-[rgba(13,13,15,0.7)] px-3 py-1.5 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
+        >
+          Leaderboard
+        </Link>
+        <Link
+          href="/watch"
+          className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border-2 border-[color:var(--color-sprawl-accent)] bg-[rgba(13,13,15,0.7)] px-3 py-1.5 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
+        >
+          Watch
+        </Link>
+      </nav>
 
       <AgentSearch onSelectAgent={setSelectedAgentId} />
       <ThemeSwitcher theme={theme} onThemeChange={setTheme} />

@@ -314,6 +314,14 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
                 >
                   {agent.wallet_address.slice(0, 10)}…{agent.wallet_address.slice(-8)}
                 </a>
+                <p className="mt-2">
+                  <a
+                    href={`/agent/${agent.agent_id}`}
+                    className="text-[11px] text-[#00ff88]/80 underline-offset-2 transition-colors hover:text-[#00ff88] hover:underline"
+                  >
+                    Share / Public page →
+                  </a>
+                </p>
               </div>
 
               {/* ── Policy rules (rules-based strategy only) ── */}

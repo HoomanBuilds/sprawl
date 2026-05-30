@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { PixelCard } from '@/components/ui/PixelCard';
 import { ShareButton } from '@/components/ShareButton';
-import { CompareButton } from '@/components/CompareButton';
+import { CompareWidget } from '@/components/CompareWidget';
 
 const STRATEGY_LABELS: Record<number, string> = { 0: 'PRESET', 1: 'RULES', 2: 'LLM' };
 
@@ -85,11 +85,11 @@ export default async function AgentPage(
               </div>
               <div className="border-2 border-[color:var(--color-sprawl-border)] p-3">
                 <div className="font-[family-name:var(--font-pixel)] text-[10px] text-[color:var(--color-sprawl-muted)] uppercase mb-1">$SPRAWL</div>
-                <div className="font-[family-name:var(--font-pixel)] text-xl text-[color:var(--color-sprawl-accent)]">{(agent.sprawl_lifetime_earned ?? 0).toLocaleString()}</div>
+                <div className="font-[family-name:var(--font-pixel)] text-xl text-[color:var(--color-sprawl-accent)]">{((agent.sprawl_lifetime_earned ?? 0) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
               </div>
               <div className="border-2 border-[color:var(--color-sprawl-border)] p-3">
                 <div className="font-[family-name:var(--font-pixel)] text-[10px] text-[color:var(--color-sprawl-muted)] uppercase mb-1">Volume</div>
-                <div className="font-[family-name:var(--font-pixel)] text-xl text-[color:var(--color-sprawl-cream)]">${((agent.total_volume ?? 0) / 1e18).toFixed(0)}</div>
+                <div className="font-[family-name:var(--font-pixel)] text-xl text-[color:var(--color-sprawl-cream)]">${(agent.total_volume ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
               </div>
               <div className="border-2 border-[color:var(--color-sprawl-border)] p-3">
                 <div className="font-[family-name:var(--font-pixel)] text-[10px] text-[color:var(--color-sprawl-muted)] uppercase mb-1">P&L</div>
@@ -109,7 +109,7 @@ export default async function AgentPage(
 
             <div className="flex flex-wrap gap-3 pt-2">
               <ShareButton agentId={agent.agent_id} agentName={name} />
-              <CompareButton agentId={agent.agent_id} />
+              <CompareWidget agentId={agent.agent_id} />
               <a
                 href={`/?agent=${agent.agent_id}`}
                 className="font-[family-name:var(--font-pixel)] text-xs text-[color:var(--color-sprawl-muted)] hover:text-[color:var(--color-sprawl-accent)] uppercase border-2 border-[color:var(--color-sprawl-border)] hover:border-[color:var(--color-sprawl-accent)] px-4 py-2 transition-none"
