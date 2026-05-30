@@ -1,4 +1,4 @@
-import { Wallet } from "ethers";
+import { Wallet, type BaseWallet } from "ethers";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { getSupabaseAdmin } from "../supabase";
 import { getMantleSepoliaProvider } from "../ethers-provider";
@@ -54,6 +54,26 @@ export async function createAgentWallet(
 
   const provider = getMantleSepoliaProvider();
   return { wallet: new Wallet(privateKey, provider), address };
+}
+
+export async function storeAgentWallet(
+  agentId: number,
+  wallet: BaseWallet
+): Promise<void> {
+  const { encrypted, iv, authTag } = encrypt(wallet.privateKey);
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from("agent_wallets").insert({
+    agent_id: agentId,
+    encrypted_private_key: encrypted,
+    iv,
+    auth_tag: authTag,
+    wallet_address: wallet.address,
+  });
+
+  if (error) {
+    throw new Error(`Failed to store wallet for agent ${agentId}: ${error.message}`);
+  }
 }
 
 export async function getAgentWallet(agentId: number): Promise<Wallet> {
