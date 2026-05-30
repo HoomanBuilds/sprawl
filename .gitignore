@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.env
+.env.local
+.env.*.local
+
+# Inspiration repos (cloned references, not part of the project)
+inspiration/
+
+# Hardhat
+artifacts/
+cache/
+typechain-types/
+
+# Next.js
+.next/
+out/
+
+# Build
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Locks
+.locks/
+
+# IDE
+.vscode/
+.idea/
+
+# Debug
+npm-debug.log*
