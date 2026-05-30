@@ -31,6 +31,8 @@ function CityPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadingDone, setLoadingDone] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
+  const [introMode, setIntroMode] = useState(false);
+  const [theme, setTheme] = useState(0);
 
   const liveAgentIds = useAgentPresence();
 
@@ -50,7 +52,10 @@ function CityPage() {
       );
 
       setStage("rendering");
-      setTimeout(() => setStage("ready"), 400);
+      setTimeout(() => {
+        setStage("ready");
+        setIntroMode(true); // kick off the cinematic flyover once buildings are ready
+      }, 400);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
       setStage("error");
@@ -84,6 +89,10 @@ function CityPage() {
         onBuildingClick={handleBuildingClick}
         liveAgentIds={liveAgentIds}
         totalCitySprawl={totalSprawl}
+        theme={theme}
+        holdRise={!loadingDone}
+        introMode={introMode}
+        onIntroEnd={() => setIntroMode(false)}
       />
 
       {/* Wallet connect (RainbowKit) */}
