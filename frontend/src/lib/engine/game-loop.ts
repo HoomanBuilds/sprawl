@@ -333,6 +333,14 @@ async function tickLoop(config: EngineConfig): Promise<void> {
             const elapsed = Date.now() - tickStart;
 
             console.log(`[TickLoop] Tick #${tickNumber} complete: ${succeeded} ok, ${failed} failed, ${elapsed}ms`);
+
+            // Run daily settlement check (settles agents whose last_settlement_date != today at midnight UTC)
+            try {
+                const { settlementCron } = await import('./settlement');
+                await settlementCron();
+            } catch (err: any) {
+                console.error(`[TickLoop] Settlement cron error: ${err.message}`);
+            }
         } catch (err: any) {
             console.error(`[TickLoop] Tick #${tickNumber} error: ${err.message}`);
         } finally {
