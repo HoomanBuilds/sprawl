@@ -1,6 +1,3 @@
-// Stub constants for Building3D and other 3D components.
-// Phase 6 replaces this stub with the full adapted version.
-
 export const ZONE_ITEMS: Record<string, string[]> = {
   crown: ["flag", "helipad", "spire", "satellite_dish", "crown_item", "reputation_star"],
   roof: ["antenna_array", "rooftop_garden", "rooftop_fire", "pool_party"],
@@ -27,7 +24,58 @@ export const ITEM_NAMES: Record<string, string> = {
   spotlight: "Spotlight",
   hologram_ring: "Hologram Ring",
   lightning_aura: "Lightning Aura",
+  custom_color: "Custom Color",
+  billboard: "Billboard",
+  led_banner: "LED Banner",
   neon_outline: "Neon Outline",
   particle_aura: "Particle Aura",
+  streak_freeze: "Streak Freeze",
+  raid_helicopter: "Flash Bot",
+  raid_drone: "Sniper Bot",
+  raid_rocket: "Liquidator",
+  tag_neon: "Neon Tag",
+  tag_fire: "Fire Tag",
+  tag_gold: "Gold Tag",
+  raid_boost_small: "War Paint",
+  raid_boost_medium: "Battle Armor",
+  raid_boost_large: "EMP Device",
+  white_rabbit: "White Rabbit",
   reputation_star: "Reputation Star",
 };
+
+export const ACHIEVEMENT_ITEMS: Record<string, { achievement: string; label: string }> = {
+  flag: { achievement: "first_trade", label: "First Trade (1+ swaps)" },
+  custom_color: { achievement: "high_volume", label: "High Volume (1,000+ trades)" },
+  neon_trim: { achievement: "grinder", label: "Grinder (2,500+ trades)" },
+  antenna_array: { achievement: "multi_protocol", label: "Multi-Protocol (5+ protocols)" },
+  rooftop_garden: { achievement: "protocol_architect", label: "Protocol Architect (10+ protocols)" },
+  spotlight: { achievement: "high_rep", label: "High Rep (80+ reputation)" },
+  helipad: { achievement: "city_founder", label: "City Founder (5+ agents spawned)" },
+  white_rabbit: { achievement: "white_rabbit", label: "Found the White Rabbit" },
+};
+
+export const ITEM_EMOJIS: Record<string, string> = {
+  flag: "🏁", helipad: "🚁", spire: "🪣", satellite_dish: "📡", crown_item: "👑",
+  antenna_array: "☀️", rooftop_garden: "🌿", rooftop_fire: "🔥", pool_party: "🏊",
+  neon_trim: "💡", spotlight: "🔦", hologram_ring: "💫", lightning_aura: "⚡",
+  custom_color: "🎨", billboard: "📺", led_banner: "🪧",
+  neon_outline: "🔮", particle_aura: "✨",
+  streak_freeze: "🧊",
+  raid_helicopter: "⚡",
+  raid_drone: "🎯",
+  raid_rocket: "💀",
+  tag_neon: "🌈",
+  tag_fire: "🔥",
+  tag_gold: "🥇",
+  raid_boost_small: "🎨",
+  raid_boost_medium: "🛡️",
+  raid_boost_large: "💣",
+  white_rabbit: "🐇",
+  reputation_star: "⭐",
+};
+
+export const FACES_ITEMS = ["custom_color", "billboard", "led_banner"];
+
+export const RAID_VEHICLE_ITEMS = ["raid_helicopter", "raid_drone", "raid_rocket"];
+export const RAID_TAG_ITEMS = ["tag_neon", "tag_fire", "tag_gold"];
+export const RAID_BOOST_ITEMS = ["raid_boost_small", "raid_boost_medium", "raid_boost_large"];
