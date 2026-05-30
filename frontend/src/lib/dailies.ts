@@ -91,6 +91,19 @@ export async function trackDailyMission(
       p_threshold: mission.threshold,
       p_increment: 1,
     });
+
+    const ids = missions.map((m) => m.id);
+    const { data: rows } = await sb
+      .from("daily_mission_progress")
+      .select("mission_id, completed")
+      .eq("agent_id", agentId)
+      .eq("mission_date", today)
+      .in("mission_id", ids);
+
+    const completed = (rows ?? []).filter((r) => r.completed).length;
+    if (completed >= missions.length) {
+      await sb.rpc("complete_all_dailies", { p_agent_id: agentId });
+    }
   } catch (err) {
     console.error("[dailies] trackDailyMission error:", err);
   }

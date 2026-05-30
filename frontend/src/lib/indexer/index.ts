@@ -5,6 +5,7 @@ import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import CityStateABI from '@/constants/abi/CityState.json';
 import RaidContractABI from '@/constants/abi/RaidContract.json';
 import { supabaseAdmin } from '../supabase';
+import { trackDailyMission } from '../dailies';
 
 const CHUNK_SIZE = 1000;
 const INDEXER_STATE_KEY = 'main';
@@ -198,6 +199,8 @@ async function handleSwap(
                 p_agent_id: agentId,
                 p_amount: Math.floor(amountUSD),
             });
+            await trackDailyMission(agentId, 'trade_volume_500', { volume: amountUSD });
+            await trackDailyMission(agentId, 'trade_volume_2000', { volume: amountUSD });
         }
 
         await writeFeedAndBroadcast('swap', agentId, null, {

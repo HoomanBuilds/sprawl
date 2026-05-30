@@ -6,6 +6,7 @@ import { getDeployerWallet } from "@/lib/ethers-provider";
 import { getAgentWallet } from "@/lib/execution/wallet-manager";
 import { CONTRACTS } from "@/lib/config";
 import { checkAchievements } from "@/lib/achievements";
+import { trackDailyMission } from "@/lib/dailies";
 import {
   getEffectiveMaxRaids,
   isWeeklyCooldownActive,
@@ -164,18 +165,26 @@ export async function POST(req: NextRequest) {
 
     const txHash: string = receipt.hash;
 
-    // XP for the attacker (uncapped raid source). The indexer syncs the raids
+    // Persist the raid-XP counter (drives raid achievements + titles) and grant
+    // general XP (uncapped raid source). The indexer separately syncs the raids
     // table + raid_wins/raid_losses from RaidRecorded/RaidResult events.
-    admin
-      .rpc("grant_xp", {
+    const raidXpEarned = attackerWon ? XP_WIN_ATTACKER : XP_LOSS_ATTACKER;
+    await Promise.all([
+      admin.rpc("increment_raid_xp", {
+        p_agent_id: attackerId,
+        p_amount: raidXpEarned,
+      }),
+      admin.rpc("grant_xp", {
         p_agent_id: attackerId,
         p_source: attackerWon ? "raid_win" : "raid_loss",
-        p_amount: attackerWon ? XP_WIN_ATTACKER : XP_LOSS_ATTACKER,
-      })
-      .then();
+        p_amount: raidXpEarned,
+      }),
+    ]);
 
-    const newAttackerRaidXp =
-      (attacker.raid_xp ?? 0) + (attackerWon ? XP_WIN_ATTACKER : XP_LOSS_ATTACKER);
+    await trackDailyMission(attackerId, "attempt_raid");
+    if (attackerWon) await trackDailyMission(attackerId, "win_raid");
+
+    const newAttackerRaidXp = (attacker.raid_xp ?? 0) + raidXpEarned;
 
     const newAchievements = await checkAchievements(
       attackerId,

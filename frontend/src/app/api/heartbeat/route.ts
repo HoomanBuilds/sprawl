@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedAddress } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { checkAchievements } from "@/lib/achievements";
+import { trackDailyMission } from "@/lib/dailies";
 
 const HEARTBEAT_XP = 10;
 
@@ -109,6 +110,8 @@ export async function POST(req: NextRequest) {
         actor_id: agentId,
         metadata: { agent_name: agent.name, streak, active: activeToday },
       });
+
+      await trackDailyMission(agentId, "heartbeat");
     }
 
     // Refresh weekly_volume from trade_history if a new ISO week has started.
