@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import type { CityBuilding } from "@/types/city";
-import Providers from "@/components/Providers";
 import DecisionFeed from "@/components/DecisionFeed";
 import BuildingInspector from "@/components/BuildingInspector";
 import LoadingScreen, { type LoadingStage } from "@/components/LoadingScreen";
@@ -105,9 +104,5 @@ function CityPage() {
 }
 
 export default function Home() {
-  return (
-    <Providers>
-      <CityPage />
-    </Providers>
-  );
+  return <CityPage />;
 }

@@ -33,7 +33,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid nonce" }, { status: 400 });
     }
 
-    const isValid = validateSiweMessage({ message: parsedMessage });
+    // Validate against the request's own host to prevent cross-domain replay
+    const requestHost = req.headers.get("host") ?? undefined;
+    const isValid = validateSiweMessage({
+      message: parsedMessage,
+      domain: requestHost,
+      nonce: storedNonce,
+    });
     if (!isValid) {
       return NextResponse.json({ error: "Invalid SIWE message" }, { status: 400 });
     }
