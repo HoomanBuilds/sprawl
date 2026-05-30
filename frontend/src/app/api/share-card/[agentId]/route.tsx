@@ -132,8 +132,8 @@ function renderLandscape(
   const GROUND_Y = 590;
 
   const stats = [
-    { label: "$SPRAWL", value: sprawlEarned.toLocaleString() },
-    { label: "VOLUME", value: `$${((agent.total_volume as number) / 1e18).toFixed(0)}` },
+    { label: "$SPRAWL", value: (sprawlEarned / 1e18).toLocaleString() },
+    { label: "VOLUME", value: `$${(agent.total_volume as number).toLocaleString()}` },
     { label: "P&L", value: `${(agent.net_pnl as number) >= 0 ? '+' : ''}$${((agent.net_pnl as number) / 1e18).toFixed(0)}` },
     { label: "RAIDS", value: `${agent.raid_wins}W/${agent.raid_losses}L` },
   ];
@@ -213,15 +213,15 @@ function renderStories(
   const sprawlEarned = agent.sprawl_lifetime_earned as number;
   const strategyType = agent.strategy_type as number;
   const strategyColor = STRATEGY_COLORS[strategyType] ?? accent;
-  const taunt = getTaunt(level, sprawlEarned);
+  const taunt = getTaunt(level, sprawlEarned / 1e18);
 
   const buildingH = Math.round(Math.min(750, Math.max(500, 500 + (level / 25) * 250)));
   const BWIDTH = 320;
   const GROUND_Y = 1320;
 
   const stats = [
-    { label: "$SPRAWL", value: sprawlEarned.toLocaleString() },
-    { label: "VOLUME", value: `$${((agent.total_volume as number) / 1e18).toFixed(0)}` },
+    { label: "$SPRAWL", value: (sprawlEarned / 1e18).toLocaleString() },
+    { label: "VOLUME", value: `$${(agent.total_volume as number).toLocaleString()}` },
     { label: "RAIDS", value: `${agent.raid_wins}W` },
   ];
 

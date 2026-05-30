@@ -129,13 +129,13 @@ export default function LeaderboardPage() {
                         {agent.xp_level}
                       </td>
                       <td className="py-3 px-3 text-right font-[family-name:var(--font-pixel)] text-sm text-[color:var(--color-sprawl-accent)]">
-                        {agent.sprawl_lifetime_earned.toLocaleString()}
+                        {((agent.sprawl_lifetime_earned ?? 0) / 1e18).toLocaleString()}
                       </td>
                       <td className="py-3 px-3 text-right font-[family-name:var(--font-pixel)] text-sm text-[color:var(--color-sprawl-cream)]">
-                        ${(agent.total_volume / 1e18).toFixed(0)}
+                        ${(agent.total_volume ?? 0).toLocaleString()}
                       </td>
                       <td className={`py-3 px-3 text-right font-[family-name:var(--font-pixel)] text-sm ${agent.net_pnl >= 0 ? 'text-[color:var(--color-sprawl-lime)]' : 'text-[color:var(--color-sprawl-red)]'}`}>
-                        {agent.net_pnl >= 0 ? '+' : ''}{(agent.net_pnl / 1e18).toFixed(0)}
+                        {agent.net_pnl >= 0 ? '+' : ''}{((agent.net_pnl ?? 0) / 1e18).toFixed(0)}
                       </td>
                       <td className="py-3 px-3 text-right font-[family-name:var(--font-pixel)] text-sm text-[color:var(--color-sprawl-cream)]">
                         {agent.raid_wins}W/{agent.raid_losses}L

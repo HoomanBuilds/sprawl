@@ -77,18 +77,20 @@ export async function GET(
   }
 
   const statDefs = [
-    { label: "$SPRAWL", key: "sprawl_lifetime_earned" as const },
-    { label: "LEVEL", key: "xp_level" as const },
-    { label: "VOLUME", key: "total_volume" as const },
-    { label: "RAIDS", key: "raid_wins" as const },
-    { label: "REP", key: "reputation_score" as const },
+    { label: "$SPRAWL", key: "sprawl_lifetime_earned" as const, divisor: 1e18 },
+    { label: "LEVEL", key: "xp_level" as const, divisor: 1 },
+    { label: "VOLUME", key: "total_volume" as const, divisor: 1 },
+    { label: "RAIDS", key: "raid_wins" as const, divisor: 1 },
+    { label: "REP", key: "reputation_score" as const, divisor: 1 },
   ];
 
   let aWins = 0;
   let bWins = 0;
   const statRows = statDefs.map(s => {
-    const a: number = (devA as Record<string, number>)[s.key] ?? 0;
-    const b: number = (devB as Record<string, number>)[s.key] ?? 0;
+    const rawA: number = (devA as Record<string, number>)[s.key] ?? 0;
+    const rawB: number = (devB as Record<string, number>)[s.key] ?? 0;
+    const a = rawA / s.divisor;
+    const b = rawB / s.divisor;
     const aWin = a > b;
     const bWin = b > a;
     if (aWin) aWins++;
