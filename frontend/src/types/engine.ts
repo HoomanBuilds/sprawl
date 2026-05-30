@@ -27,6 +27,11 @@ export interface AgentContext {
         sprawlEarned: number;
         sprawlBalance: number;
     };
+    agentStats: {
+        level: number;
+        raidWins: number;
+        profitStreak: number;
+    };
     recentTrades: Array<{
         action: string;
         pair: string;

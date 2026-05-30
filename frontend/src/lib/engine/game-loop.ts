@@ -21,12 +21,13 @@ function formatUSD(n: number): string {
 
 async function selectStrategy(agent: AgentRecord): Promise<StrategyEngine> {
     switch (agent.strategy_type) {
-        case 0: {
-            const { CannedStrategy } = await import('./canned-strategy');
-            const presetName = (agent.policy_config as any)?.presetName ?? 'balanced';
-            return new CannedStrategy(presetName);
-        }
+        case 0:
         case 1: {
+            const rules = (agent.policy_config as any)?.rules;
+            if (!rules || rules.length === 0) {
+                const { CannedStrategy } = await import('./canned-strategy');
+                return new CannedStrategy('balanced');
+            }
             const { PolicyStrategy } = await import('./policy-strategy');
             return new PolicyStrategy(agent.policy_config as any);
         }
@@ -146,6 +147,11 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
             unrealizedPnl,
             sprawlEarned: agent.sprawl_lifetime_earned,
             sprawlBalance: portfolio.SPRAWL ?? 0,
+        },
+        agentStats: {
+            level: agent.xp_level ?? 1,
+            raidWins: agent.raid_wins ?? 0,
+            profitStreak: agent.profit_streak ?? 0,
         },
         recentTrades: (recentTrades ?? []).map((t: any) => ({
             action: t.action,

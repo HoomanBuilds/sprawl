@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid strategy type" }, { status: 400 });
     }
 
-    // Resolve the policy: preset takes precedence, else custom.
+    // Resolve the policy: preset takes precedence, else custom. LLM agents
+    // (strategyType 2) carry no rules — the model decides each tick.
     let rawPolicy: unknown;
     if (presetName) {
       const preset = STRATEGY_PRESETS[presetName];
@@ -63,6 +64,14 @@ export async function POST(req: NextRequest) {
       rawPolicy = preset;
     } else if (customPolicy) {
       rawPolicy = customPolicy;
+    } else if (strategyType === 2) {
+      rawPolicy = {
+        rules: [],
+        riskTolerance: "medium",
+        maxPositionSize: 30,
+        maxSlippageBps: 200,
+        allowedProtocols: ["SprawlDEX"],
+      };
     } else {
       return NextResponse.json(
         { error: "Provide either presetName or customPolicy" },

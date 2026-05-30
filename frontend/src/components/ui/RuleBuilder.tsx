@@ -62,8 +62,21 @@ const FIELD_GROUPS: FieldGroup[] = [
     ],
   },
   {
-    group: "Market — Pool",
-    options: [{ value: "market.pool.sETH_sUSDC.apr", label: "sETH/sUSDC Pool APR" }],
+    group: "Market — Pool APR",
+    options: [
+      { value: "market.pool.sETH_sUSDC.apr", label: "sETH/sUSDC APR" },
+      { value: "market.pool.sBTC_sUSDC.apr", label: "sBTC/sUSDC APR" },
+      { value: "market.pool.sPOL_sUSDC.apr", label: "sPOL/sUSDC APR" },
+      { value: "market.pool.sSOL_sUSDC.apr", label: "sSOL/sUSDC APR" },
+      { value: "market.pool.SPRAWL_sUSDC.apr", label: "SPRAWL/sUSDC APR" },
+    ],
+  },
+  {
+    group: "Market — Pool TVL",
+    options: [
+      { value: "market.pool.sETH_sUSDC.tvl", label: "sETH/sUSDC TVL" },
+      { value: "market.pool.sBTC_sUSDC.tvl", label: "sBTC/sUSDC TVL" },
+    ],
   },
   {
     group: "Agent",

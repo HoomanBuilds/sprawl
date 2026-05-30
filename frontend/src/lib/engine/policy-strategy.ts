@@ -1,65 +1,46 @@
 import type { StrategyEngine, AgentContext, AgentDecision } from '@/types/engine';
 import type { AgentPolicy, PolicyRule } from '@/types/agent';
 
-type ConditionContext = {
-    'pool.apr': number;
-    'pool.price': number;
-    'pool.priceChange1h': number;
-    'pool.priceChange24h': number;
-    'pool.volume24h': number;
-    'portfolio.totalValueUSD': number;
-    'portfolio.unrealizedPnl': number;
-    'portfolio.pnlPct': number;
-    'holding.pct': number;
-    'price.sETH': number;
-    'price.sBTC': number;
-    'price.sPOL': number;
-    'price.sSOL': number;
-    'price.SPRAWL': number;
-    [key: string]: number | string;
-};
+type ConditionContext = Record<string, number>;
+
+const TOKENS = ['sETH', 'sBTC', 'sPOL', 'sSOL', 'SPRAWL'] as const;
 
 function buildConditionContext(ctx: AgentContext): ConditionContext {
-    const bestPool = ctx.market.pools.reduce((best, p) =>
-        p.apr > (best?.apr ?? 0) ? p : best, ctx.market.pools[0]);
+    const c: ConditionContext = {};
 
-    const totalValue = ctx.portfolio.totalValueUSD;
-    const pnlPct = totalValue > 0
-        ? (ctx.portfolio.unrealizedPnl / totalValue) * 100
-        : 0;
+    for (const t of TOKENS) {
+        c[`market.price.${t}`] = ctx.market.prices[t] ?? 0;
+        c[`portfolio.holdings.${t}`] = ctx.portfolio.holdings[t] ?? 0;
+    }
 
-    return {
-        'pool.apr': bestPool?.apr ?? 0,
-        'pool.price': bestPool?.price ?? 0,
-        'pool.priceChange1h': bestPool?.priceChange1h ?? 0,
-        'pool.priceChange24h': bestPool?.priceChange24h ?? 0,
-        'pool.volume24h': bestPool?.volume24h ?? 0,
-        'portfolio.totalValueUSD': totalValue,
-        'portfolio.unrealizedPnl': ctx.portfolio.unrealizedPnl,
-        'portfolio.pnlPct': pnlPct,
-        'holding.pct': 0,
-        'price.sETH': ctx.market.prices.sETH ?? 0,
-        'price.sBTC': ctx.market.prices.sBTC ?? 0,
-        'price.sPOL': ctx.market.prices.sPOL ?? 0,
-        'price.sSOL': ctx.market.prices.sSOL ?? 0,
-        'price.SPRAWL': ctx.market.prices.SPRAWL ?? 0,
-    };
+    for (const p of ctx.market.pools) {
+        const pair = (p.name || `${p.tokenA}_${p.tokenB}`).replace('/', '_');
+        c[`market.pool.${pair}.apr`] = p.apr ?? 0;
+        c[`market.pool.${pair}.tvl`] = p.tvl ?? 0;
+        c[`market.priceChange1h.${p.tokenA}`] = p.priceChange1h ?? 0;
+        c[`market.priceChange24h.${p.tokenA}`] = p.priceChange24h ?? 0;
+    }
+
+    c['portfolio.totalValueUSD'] = ctx.portfolio.totalValueUSD;
+    c['portfolio.unrealizedPnl'] = ctx.portfolio.unrealizedPnl;
+    c['portfolio.sprawlBalance'] = ctx.portfolio.sprawlBalance;
+    c['agent.level'] = ctx.agentStats.level;
+    c['agent.raidWins'] = ctx.agentStats.raidWins;
+    c['agent.profitStreak'] = ctx.agentStats.profitStreak;
+
+    return c;
 }
 
 function evaluateCondition(
     condition: PolicyRule['condition'],
     context: ConditionContext
 ): boolean {
-    const fieldValue = context[condition.field];
-    if (fieldValue === undefined) return false;
+    const actual = context[condition.field];
+    if (actual === undefined) return false;
 
     const target = typeof condition.value === 'string'
         ? parseFloat(condition.value)
         : condition.value;
-
-    const actual = typeof fieldValue === 'string'
-        ? parseFloat(fieldValue)
-        : fieldValue;
 
     switch (condition.operator) {
         case '>': return actual > target;
