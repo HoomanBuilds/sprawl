@@ -23,12 +23,10 @@ export async function GET() {
 
   if (trades && trades.length > 0) {
     for (const trade of trades) {
-      let price: number;
-      if (trade.token_in === 'SPRAWL') {
-        price = trade.amount_out / trade.amount_in;
-      } else {
-        price = trade.amount_in / trade.amount_out;
-      }
+      const inHuman = parseFloat(formatEther(trade.amount_in));
+      const outHuman = parseFloat(formatEther(trade.amount_out));
+      const price =
+        trade.token_in === 'SPRAWL' ? outHuman / inHuman : inHuman / outHuman;
       if (isFinite(price) && price > 0) {
         pricePoints.push({ ts: trade.created_at, price });
       }
