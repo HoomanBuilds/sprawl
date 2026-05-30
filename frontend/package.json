@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "engine": "tsx scripts/run-engine.ts",
+    "indexer": "tsx scripts/run-indexer.ts",
+    "market-maker": "tsx scripts/run-market-maker.ts",
+    "run-all": "tsx scripts/run-all.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
