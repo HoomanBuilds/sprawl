@@ -105,6 +105,8 @@ async function main() {
   // For simplicity: keep deployer as owner who calls both directly
   await cityState.setReferee(await referee.getAddress());
   console.log("  CityState referee → CityReferee");
+  await cityState.setRaidContract(await raidContract.getAddress());
+  console.log("  CityState raidContract → RaidContract");
 
   // SPRAWL: set secondary minter FIRST (requires primary minter = deployer still)
   await sprawl.setSecondaryMinter(await referee.getAddress());

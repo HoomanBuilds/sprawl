@@ -36,6 +36,11 @@ contract AgentFaucet {
         owner = msg.sender;
     }
 
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        owner = newOwner;
+    }
+
     function fundNewAgent(address agentWallet) external onlyOwner {
         require(!funded[agentWallet], "Already funded");
         funded[agentWallet] = true;

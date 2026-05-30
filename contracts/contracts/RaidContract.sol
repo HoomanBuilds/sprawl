@@ -67,15 +67,17 @@ contract RaidContract {
             "Weekly cooldown"
         );
 
-        sprawlToken.transferFrom(raidPayer, BURN_ADDRESS, RAID_COST);
-
         uint256 attackScore = _agentScore(attackerId, 50);
         uint256 defenseScore = _agentScore(defenderId, 30);
         bool attackerWon = attackScore > defenseScore;
 
+        // State changes first (Checks-Effects-Interactions)
         dailyRaids[attackerId][today]++;
         weeklyTarget[attackerId][defenderId] = block.timestamp;
         cityState.recordRaid(attackerId, defenderId, attackerWon);
+
+        // Burn SPRAWL AFTER all validation and state writes succeed
+        sprawlToken.transferFrom(raidPayer, BURN_ADDRESS, RAID_COST);
 
         emit RaidResult(attackerId, defenderId, attackerWon, attackScore, defenseScore);
     }

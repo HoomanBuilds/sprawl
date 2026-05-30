@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 contract CityState {
     address public owner;
     address public referee;
+    address public raidContract;
 
     struct AgentStats {
         address wallet;
@@ -23,14 +24,18 @@ contract CityState {
     event AgentDecision(uint256 indexed agentId, string action, string protocol, bytes params, uint256 ts);
     event AgentOutcome(uint256 indexed agentId, int256 pnlDelta, uint256 newVolume, uint256 newLevel);
     event BuildingGrew(uint256 indexed agentId, uint256 newLevel);
+    event RaidRecorded(uint256 indexed attackerId, uint256 indexed defenderId, bool attackerWon);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
         _;
     }
 
-    modifier onlyReferee() {
-        require(msg.sender == referee || msg.sender == owner, "Not referee");
+    modifier onlyAuthorized() {
+        require(
+            msg.sender == referee || msg.sender == raidContract || msg.sender == owner,
+            "Not authorized"
+        );
         _;
     }
 
@@ -40,6 +45,10 @@ contract CityState {
 
     function setReferee(address _referee) external onlyOwner {
         referee = _referee;
+    }
+
+    function setRaidContract(address _raidContract) external onlyOwner {
+        raidContract = _raidContract;
     }
 
     function spawnAgent(uint256 agentId, address wallet, uint8 strategyType) external onlyOwner {
@@ -63,7 +72,7 @@ contract CityState {
         emit AgentDecision(agentId, action, protocol, params, block.timestamp);
     }
 
-    function updateAgent(uint256 agentId, int256 pnlDelta, uint256 newVolume) external onlyReferee {
+    function updateAgent(uint256 agentId, int256 pnlDelta, uint256 newVolume) external onlyAuthorized {
         AgentStats storage stats = agents[agentId];
         require(stats.exists, "Agent not found");
         stats.totalVolume = newVolume;
@@ -76,7 +85,7 @@ contract CityState {
         emit AgentOutcome(agentId, pnlDelta, newVolume, stats.level);
     }
 
-    function recordRaid(uint256 attackerId, uint256 defenderId, bool attackerWon) external onlyReferee {
+    function recordRaid(uint256 attackerId, uint256 defenderId, bool attackerWon) external onlyAuthorized {
         AgentStats storage attacker = agents[attackerId];
         AgentStats storage defender = agents[defenderId];
         require(attacker.exists && defender.exists, "Agent not found");
@@ -87,5 +96,6 @@ contract CityState {
             attacker.raidLosses++;
             defender.raidWins++;
         }
+        emit RaidRecorded(attackerId, defenderId, attackerWon);
     }
 }
