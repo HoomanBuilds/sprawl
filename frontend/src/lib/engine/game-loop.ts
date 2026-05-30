@@ -126,8 +126,8 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
     // 5. COMPOSE CONTEXT — ISS + portfolio + trades + memories + market
     let relevantSkills: Array<{ name: string; description: string; success_rate: number }> = [];
     try {
-        const { skillManager } = await import('../skills/skill-manager');
-        relevantSkills = await skillManager.retrieveSkills(agent.agent_id, queryText, 3);
+        const { retrieveSkills } = await import('../skills/skill-manager');
+        relevantSkills = await retrieveSkills(agent.agent_id, queryText, 3);
     } catch {
         // skill manager not yet available
     }
@@ -158,6 +158,7 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
         market: {
             prices: market.prices,
             pools: market.pools,
+            timestamp: market.timestamp ?? Date.now(),
         },
         memories: relevantMemories.map(m => m.description),
         skills: relevantSkills.map(s => ({
@@ -232,8 +233,8 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
     // 9. LEARN — critic verifies, skill manager saves
     if (result.realizedPnl > 0 && agent.strategy_type === 2) {
         try {
-            const { skillManager } = await import('../skills/skill-manager');
-            await skillManager.maybeLearnSkill(agent.agent_id, finalDecision, result);
+            const { maybeLearnSkill } = await import('../skills/skill-manager');
+            await maybeLearnSkill(agent.agent_id, finalDecision, result);
         } catch {
             // skill manager not yet available
         }

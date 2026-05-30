@@ -1,4 +1,4 @@
-import { Contract, formatEther, EventLog } from 'ethers';
+import { Contract, formatEther, EventLog, Log } from 'ethers';
 import { getMantleSepoliaProvider } from '../ethers-provider';
 import { CONTRACTS, TOKEN_SYMBOLS } from '../config';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
@@ -279,21 +279,23 @@ async function catchUp(
         const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
 
         try {
-            const [spawns, decisions, outcomes, grows, raidRecords] = await Promise.all([
+            const ev = (logs: (Log | EventLog)[]): EventLog[] => logs.filter((l): l is EventLog => 'args' in l);
+
+            const [spawns, decisions, outcomes, grows, raidRecords] = (await Promise.all([
                 cityState.queryFilter(cityState.filters.AgentSpawned(), start, end),
                 cityState.queryFilter(cityState.filters.AgentDecision(), start, end),
                 cityState.queryFilter(cityState.filters.AgentOutcome(), start, end),
                 cityState.queryFilter(cityState.filters.BuildingGrew(), start, end),
                 cityState.queryFilter(cityState.filters.RaidRecorded(), start, end),
-            ]);
+            ])).map(ev);
 
-            const [swaps, adds, removes, poolCreated, raidResults] = await Promise.all([
+            const [swaps, adds, removes, poolCreated, raidResults] = (await Promise.all([
                 dex.queryFilter(dex.filters.Swap(), start, end),
                 dex.queryFilter(dex.filters.LiquidityAdded(), start, end),
                 dex.queryFilter(dex.filters.LiquidityRemoved(), start, end),
                 dex.queryFilter(dex.filters.PoolCreated(), start, end),
                 raid.queryFilter(raid.filters.RaidResult(), start, end),
-            ]);
+            ])).map(ev);
 
             for (const e of spawns) await handleAgentSpawned(e.args![0], e.args![1], Number(e.args![2]));
             for (const e of decisions) await handleAgentDecision(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4]);
