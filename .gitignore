@@ -7,6 +7,9 @@ node_modules/
 # Inspiration repos (cloned references, not part of the project)
 inspiration/
 
+# Docs / plans (local only)
+docs/
+
 # Hardhat
 artifacts/
 cache/
