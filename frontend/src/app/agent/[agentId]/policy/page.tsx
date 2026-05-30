@@ -191,7 +191,10 @@ export default function PolicyEditPage() {
               </div>
             )}
 
-            <RuleBuilder policy={policy} onChange={setPolicy} />
+            <RuleBuilder
+              rules={policy.rules}
+              onChange={(rules) => setPolicy({ ...policy, rules })}
+            />
 
             <button
               onClick={handleSave}

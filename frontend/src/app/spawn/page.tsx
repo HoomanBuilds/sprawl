@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { PresetSelector } from "@/components/ui/PresetSelector";
 import { RuleBuilder } from "@/components/ui/RuleBuilder";
-import type { StrategyPreset } from "@/lib/strategy-presets";
+import { getStrategyPreset, type StrategyPreset } from "@/lib/strategy-presets";
 import type { AgentPolicy } from "@/types/agent";
 
 const ACCENT = "#00ff88";
@@ -50,8 +50,12 @@ export default function SpawnPage() {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<StrategyMode>("preset");
 
-  const [preset, setPreset] = useState<StrategyPreset | null>(null);
+  const [presetKey, setPresetKey] = useState<string | null>(null);
   const [policy, setPolicy] = useState<AgentPolicy>(emptyPolicy);
+
+  // Derive the full preset object from the selected key so downstream
+  // usages (preset.id / preset.risk / preset.name / !!preset) work unchanged.
+  const preset = presetKey ? getStrategyPreset(presetKey) : null;
   const [persona, setPersona] = useState("");
 
   const [status, setStatus] = useState<SpawnStatus>("idle");
@@ -90,8 +94,8 @@ export default function SpawnPage() {
       strategyType: STRATEGY_TYPE[mode],
     };
 
-    if (mode === "preset" && preset) {
-      body.presetName = preset.id;
+    if (mode === "preset" && presetKey) {
+      body.presetName = presetKey;
     } else if (mode === "rules") {
       body.customPolicy = {
         rules: policy.rules,
@@ -134,7 +138,7 @@ export default function SpawnPage() {
       clearTimeout(t1);
       clearTimeout(t2);
     }
-  }, [configReady, trimmedName, mode, preset, policy, persona]);
+  }, [configReady, trimmedName, mode, presetKey, policy, persona]);
 
   const shortAddr = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -267,10 +271,13 @@ export default function SpawnPage() {
             <section>
               <SectionLabel index={3} title="Configure" accent={ACCENT} />
               {mode === "preset" && (
-                <PresetSelector selected={preset} onSelect={setPreset} />
+                <PresetSelector selected={presetKey} onSelect={setPresetKey} />
               )}
               {mode === "rules" && (
-                <RuleBuilder policy={policy} onChange={setPolicy} />
+                <RuleBuilder
+                  rules={policy.rules}
+                  onChange={(rules) => setPolicy({ ...policy, rules })}
+                />
               )}
               {mode === "llm" && (
                 <div>
