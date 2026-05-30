@@ -1,4 +1,4 @@
-import { Contract, formatEther } from 'ethers';
+import { Contract, formatEther, EventLog } from 'ethers';
 import { getMantleSepoliaProvider } from '../ethers-provider';
 import { CONTRACTS, TOKEN_SYMBOLS } from '../config';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
@@ -8,6 +8,40 @@ import { supabaseAdmin } from '../supabase';
 
 const CHUNK_SIZE = 1000;
 const INDEXER_STATE_KEY = 'main';
+const REALTIME_CHANNEL = 'city-feed';
+
+// ---------------------------------------------------------------------------
+// Supabase Realtime broadcast (PetSupervisor pattern from eth-open-agents)
+// ---------------------------------------------------------------------------
+
+const realtimeChannel = supabaseAdmin.channel(REALTIME_CHANNEL);
+
+async function broadcastEvent(eventType: string, payload: Record<string, unknown>): Promise<void> {
+    try {
+        await realtimeChannel.send({
+            type: 'broadcast',
+            event: eventType,
+            payload,
+        });
+    } catch {
+        // Realtime broadcast is best-effort — don't crash the indexer
+    }
+}
+
+// Write to activity_feed AND broadcast simultaneously
+async function writeFeedAndBroadcast(
+    eventType: string,
+    actorId: number | null,
+    targetId: number | null,
+    metadata: Record<string, unknown>,
+): Promise<void> {
+    const row = { event_type: eventType, actor_id: actorId, target_id: targetId, metadata };
+
+    await Promise.all([
+        supabaseAdmin.from('activity_feed').insert(row),
+        broadcastEvent(eventType, { ...row, timestamp: new Date().toISOString() }),
+    ]);
+}
 
 // ---------------------------------------------------------------------------
 // Block cursor persistence
@@ -30,11 +64,20 @@ async function setLastBlock(block: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Address-to-symbol helper
+// Address-to-symbol + agent lookup helpers
 // ---------------------------------------------------------------------------
 
 function symbolFromAddress(addr: string): string {
     return TOKEN_SYMBOLS[addr] ?? addr.slice(0, 10);
+}
+
+async function findAgentByWallet(walletAddress: string): Promise<number | null> {
+    const { data } = await supabaseAdmin
+        .from('agents')
+        .select('agent_id')
+        .eq('wallet_address', walletAddress)
+        .single();
+    return data?.agent_id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +87,7 @@ function symbolFromAddress(addr: string): string {
 async function handleAgentSpawned(agentId: bigint, wallet: string, strategyType: number): Promise<void> {
     console.log(`[Indexer] AgentSpawned: ${agentId} (${wallet})`);
     try {
-        const { error } = await supabaseAdmin.from('agents').upsert({
+        await supabaseAdmin.from('agents').upsert({
             agent_id: Number(agentId),
             wallet_address: wallet,
             owner_address: wallet,
@@ -55,13 +98,7 @@ async function handleAgentSpawned(agentId: bigint, wallet: string, strategyType:
             xp_total: 0,
         }, { onConflict: 'agent_id' });
 
-        if (error) console.error(`[Indexer] Failed to upsert agent: ${error.message}`);
-
-        await supabaseAdmin.from('activity_feed').insert({
-            event_type: 'spawn',
-            actor_id: Number(agentId),
-            metadata: { wallet, strategyType },
-        });
+        await writeFeedAndBroadcast('spawn', Number(agentId), null, { wallet, strategyType });
     } catch (err: any) {
         console.error(`[Indexer] AgentSpawned handler error: ${err.message}`);
     }
@@ -70,11 +107,7 @@ async function handleAgentSpawned(agentId: bigint, wallet: string, strategyType:
 async function handleAgentDecision(agentId: bigint, action: string, protocol: string, params: string, ts: bigint): Promise<void> {
     console.log(`[Indexer] AgentDecision: agent ${agentId} — ${action} on ${protocol}`);
     try {
-        await supabaseAdmin.from('activity_feed').insert({
-            event_type: 'decision',
-            actor_id: Number(agentId),
-            metadata: { action, protocol, ts: Number(ts) },
-        });
+        await writeFeedAndBroadcast('decision', Number(agentId), null, { action, protocol, ts: Number(ts) });
     } catch (err: any) {
         console.error(`[Indexer] AgentDecision handler error: ${err.message}`);
     }
@@ -87,9 +120,16 @@ async function handleAgentOutcome(agentId: bigint, pnlDelta: bigint, newVolume: 
             .from('agents')
             .update({
                 total_volume: newVolume.toString(),
+                net_pnl: Number(pnlDelta),
                 xp_level: Number(newLevel),
             })
             .eq('agent_id', Number(agentId));
+
+        await writeFeedAndBroadcast('outcome', Number(agentId), null, {
+            pnlDelta: formatEther(pnlDelta),
+            volume: formatEther(newVolume),
+            level: Number(newLevel),
+        });
     } catch (err: any) {
         console.error(`[Indexer] AgentOutcome handler error: ${err.message}`);
     }
@@ -97,20 +137,29 @@ async function handleAgentOutcome(agentId: bigint, pnlDelta: bigint, newVolume: 
 
 async function handleBuildingGrew(agentId: bigint, newLevel: bigint): Promise<void> {
     console.log(`[Indexer] BuildingGrew: Agent ${agentId} -> level ${newLevel}`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'level_up',
-        actor_id: Number(agentId),
-        metadata: { level: Number(newLevel) },
-    });
+    await writeFeedAndBroadcast('level_up', Number(agentId), null, { level: Number(newLevel) });
 }
 
 async function handleRaidRecorded(attackerId: bigint, defenderId: bigint, attackerWon: boolean): Promise<void> {
     console.log(`[Indexer] RaidRecorded: ${attackerId} vs ${defenderId} — ${attackerWon ? 'attacker won' : 'defender won'}`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'raid',
-        actor_id: Number(attackerId),
-        metadata: { defenderId: Number(defenderId), attackerWon },
+
+    // Write to raids table
+    await supabaseAdmin.from('raids').insert({
+        attacker_id: Number(attackerId),
+        defender_id: Number(defenderId),
+        success: attackerWon,
     });
+
+    // Update agent raid stats
+    if (attackerWon) {
+        await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(attackerId), p_field: 'raid_wins' });
+        await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(defenderId), p_field: 'raid_losses' });
+    } else {
+        await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(attackerId), p_field: 'raid_losses' });
+        await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(defenderId), p_field: 'raid_wins' });
+    }
+
+    await writeFeedAndBroadcast('raid', Number(attackerId), Number(defenderId), { attackerWon });
 }
 
 // ---------------------------------------------------------------------------
@@ -120,33 +169,45 @@ async function handleRaidRecorded(attackerId: bigint, defenderId: bigint, attack
 async function handleSwap(
     trader: string, tokenIn: string, tokenOut: string,
     amountIn: bigint, amountOut: bigint, priceAfter: bigint, fee: bigint,
+    event?: EventLog,
 ): Promise<void> {
     const symIn = symbolFromAddress(tokenIn);
     const symOut = symbolFromAddress(tokenOut);
-    console.log(`[Indexer] Swap: ${trader} ${formatEther(amountIn)} ${symIn} -> ${formatEther(amountOut)} ${symOut}`);
+    const txHash = event?.transactionHash ?? 'unknown';
+    console.log(`[Indexer] Swap: ${trader} ${formatEther(amountIn)} ${symIn} -> ${formatEther(amountOut)} ${symOut} (tx: ${txHash.slice(0, 10)})`);
 
     try {
+        // Look up agent by wallet address
+        const agentId = await findAgentByWallet(trader);
+
         await supabaseAdmin.from('trade_history').insert({
-            agent_id: null,
+            agent_id: agentId,
             action: 'swap',
             token_in: symIn,
             token_out: symOut,
             amount_in: amountIn.toString(),
             amount_out: amountOut.toString(),
             price_at_trade: parseFloat(formatEther(priceAfter)),
-            tx_hash: trader,
+            tx_hash: txHash,
         });
 
-        await supabaseAdmin.from('activity_feed').insert({
-            event_type: 'swap',
-            metadata: {
-                trader,
-                tokenIn: symIn,
-                tokenOut: symOut,
-                amountIn: formatEther(amountIn),
-                amountOut: formatEther(amountOut),
-                fee: formatEther(fee),
-            },
+        // Update agent volume if this is an agent trade (not market maker)
+        if (agentId !== null) {
+            const amountUSD = parseFloat(formatEther(amountIn));
+            await supabaseAdmin.rpc('increment_volume', {
+                p_agent_id: agentId,
+                p_amount: Math.floor(amountUSD),
+            });
+        }
+
+        await writeFeedAndBroadcast('swap', agentId, null, {
+            trader,
+            tokenIn: symIn,
+            tokenOut: symOut,
+            amountIn: formatEther(amountIn),
+            amountOut: formatEther(amountOut),
+            fee: formatEther(fee),
+            txHash,
         });
     } catch (err: any) {
         console.error(`[Indexer] Swap handler error: ${err.message}`);
@@ -158,15 +219,12 @@ async function handleLiquidityAdded(
     amountA: bigint, amountB: bigint, shares: bigint,
 ): Promise<void> {
     console.log(`[Indexer] LiquidityAdded: ${provider} pool=${poolId.slice(0, 10)} shares=${formatEther(shares)}`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'liquidity_added',
-        metadata: {
-            provider,
-            poolId,
-            amountA: formatEther(amountA),
-            amountB: formatEther(amountB),
-            shares: formatEther(shares),
-        },
+    const agentId = await findAgentByWallet(provider);
+    await writeFeedAndBroadcast('liquidity_added', agentId, null, {
+        provider, poolId,
+        amountA: formatEther(amountA),
+        amountB: formatEther(amountB),
+        shares: formatEther(shares),
     });
 }
 
@@ -175,15 +233,12 @@ async function handleLiquidityRemoved(
     amountA: bigint, amountB: bigint, shares: bigint,
 ): Promise<void> {
     console.log(`[Indexer] LiquidityRemoved: ${provider} pool=${poolId.slice(0, 10)} shares=${formatEther(shares)}`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'liquidity_removed',
-        metadata: {
-            provider,
-            poolId,
-            amountA: formatEther(amountA),
-            amountB: formatEther(amountB),
-            shares: formatEther(shares),
-        },
+    const agentId = await findAgentByWallet(provider);
+    await writeFeedAndBroadcast('liquidity_removed', agentId, null, {
+        provider, poolId,
+        amountA: formatEther(amountA),
+        amountB: formatEther(amountB),
+        shares: formatEther(shares),
     });
 }
 
@@ -191,10 +246,7 @@ async function handlePoolCreated(poolId: string, tokenA: string, tokenB: string)
     const symA = symbolFromAddress(tokenA);
     const symB = symbolFromAddress(tokenB);
     console.log(`[Indexer] PoolCreated: ${symA}/${symB} (${poolId.slice(0, 10)})`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'pool_created',
-        metadata: { poolId, tokenA: symA, tokenB: symB },
-    });
+    await writeFeedAndBroadcast('pool_created', null, null, { poolId, tokenA: symA, tokenB: symB });
 }
 
 // ---------------------------------------------------------------------------
@@ -206,15 +258,10 @@ async function handleRaidResult(
     attackerWon: boolean, attackScore: bigint, defenseScore: bigint,
 ): Promise<void> {
     console.log(`[Indexer] RaidResult: ${attackerId} vs ${defenderId} (${attackScore} vs ${defenseScore})`);
-    await supabaseAdmin.from('activity_feed').insert({
-        event_type: 'raid_result',
-        actor_id: Number(attackerId),
-        metadata: {
-            defenderId: Number(defenderId),
-            attackerWon,
-            attackScore: Number(attackScore),
-            defenseScore: Number(defenseScore),
-        },
+    await writeFeedAndBroadcast('raid_result', Number(attackerId), Number(defenderId), {
+        attackerWon,
+        attackScore: Number(attackScore),
+        defenseScore: Number(defenseScore),
     });
 }
 
@@ -232,7 +279,7 @@ async function catchUp(
         const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
 
         try {
-            const [spawns, decisions, outcomes, grows, raids] = await Promise.all([
+            const [spawns, decisions, outcomes, grows, raidRecords] = await Promise.all([
                 cityState.queryFilter(cityState.filters.AgentSpawned(), start, end),
                 cityState.queryFilter(cityState.filters.AgentDecision(), start, end),
                 cityState.queryFilter(cityState.filters.AgentOutcome(), start, end),
@@ -252,8 +299,8 @@ async function catchUp(
             for (const e of decisions) await handleAgentDecision(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4]);
             for (const e of outcomes) await handleAgentOutcome(e.args![0], e.args![1], e.args![2], e.args![3]);
             for (const e of grows) await handleBuildingGrew(e.args![0], e.args![1]);
-            for (const e of raids) await handleRaidRecorded(e.args![0], e.args![1], e.args![2]);
-            for (const e of swaps) await handleSwap(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4], e.args![5], e.args![6]);
+            for (const e of raidRecords) await handleRaidRecorded(e.args![0], e.args![1], e.args![2]);
+            for (const e of swaps) await handleSwap(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4], e.args![5], e.args![6], e as EventLog);
             for (const e of adds) await handleLiquidityAdded(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4]);
             for (const e of removes) await handleLiquidityRemoved(e.args![0], e.args![1], e.args![2], e.args![3], e.args![4]);
             for (const e of poolCreated) await handlePoolCreated(e.args![0], e.args![1], e.args![2]);
@@ -277,7 +324,11 @@ function attachListeners(cityState: Contract, dex: Contract, raid: Contract): vo
     cityState.on('BuildingGrew', handleBuildingGrew);
     cityState.on('RaidRecorded', handleRaidRecorded);
 
-    dex.on('Swap', handleSwap);
+    dex.on('Swap', (...args: any[]) => {
+        // ethers v6 passes the event as the last arg in live listeners
+        const event = args[args.length - 1];
+        handleSwap(args[0], args[1], args[2], args[3], args[4], args[5], args[6], event);
+    });
     dex.on('LiquidityAdded', handleLiquidityAdded);
     dex.on('LiquidityRemoved', handleLiquidityRemoved);
     dex.on('PoolCreated', handlePoolCreated);
@@ -301,6 +352,10 @@ export async function startIndexer(signal: AbortSignal): Promise<void> {
     const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, provider);
     const raid = new Contract(CONTRACTS.RaidContract, RaidContractABI.abi, provider);
 
+    // Subscribe to Realtime channel
+    realtimeChannel.subscribe();
+    console.log('[Indexer] Realtime broadcast channel active');
+
     console.log('[Indexer] Starting chain event indexer');
 
     const lastBlock = await getLastBlock();
@@ -323,6 +378,7 @@ export async function startIndexer(signal: AbortSignal): Promise<void> {
         console.log('[Indexer] Shutting down');
         detachListeners(cityState, dex, raid);
         provider.removeAllListeners();
+        realtimeChannel.unsubscribe();
     }, { once: true });
 
     await new Promise<void>((resolve) => {
