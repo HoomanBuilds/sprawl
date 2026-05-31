@@ -3,6 +3,7 @@ export interface AgentRecord {
   wallet_address: string;
   owner_address: string;
   name: string;
+  avatar_url: string | null;
   persona: string;
   strategy_type: 0 | 1 | 2;
   policy_config: AgentPolicy;

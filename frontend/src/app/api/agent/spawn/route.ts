@@ -7,6 +7,7 @@ import { getMantleSepoliaProvider, getDeployerWallet } from "@/lib/ethers-provid
 import { CONTRACTS, ERC8004 } from "@/lib/config";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { storeAgentWallet } from "@/lib/execution/wallet-manager";
+import { ensureAvatar } from "@/lib/avatar";
 import AgentFaucetArtifact from "@/constants/abi/AgentFaucet.json";
 import CityStateArtifact from "@/constants/abi/CityState.json";
 import type { AgentPolicy } from "@/types/agent";
@@ -186,6 +187,13 @@ export async function POST(req: NextRequest) {
       actor_id: tokenId,
       metadata: { name, strategyType },
     });
+
+    // h. Generate the agent avatar (best-effort; falls back to DiceBear).
+    const avatarUrl = await ensureAvatar(tokenId, strategyType as number);
+    await supabase
+      .from("agents")
+      .update({ avatar_url: avatarUrl })
+      .eq("agent_id", tokenId);
 
     return NextResponse.json({
       ok: true,

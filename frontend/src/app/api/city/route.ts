@@ -8,7 +8,7 @@ import type { AgentRecord } from "@/types/agent";
 // raid_tags is keyed by `building_agent_id` (migration 011), not `agent_id`.
 
 const AGENT_COLUMNS =
-  "agent_id, wallet_address, owner_address, name, persona, strategy_type, " +
+  "agent_id, wallet_address, owner_address, name, avatar_url, persona, strategy_type, " +
   "policy_config, sprawl_balance, sprawl_lifetime_earned, sprawl_lifetime_spent, " +
   "last_portfolio_value, total_volume, strategy_count, recent_actions, " +
   "reputation_score, xp_total, xp_level, xp_daily, raid_xp, raid_wins, " +

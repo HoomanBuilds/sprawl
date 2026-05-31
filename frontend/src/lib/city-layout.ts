@@ -203,6 +203,7 @@ export function generateCityLayout(agents: AgentRecord[]): {
       buildings.push({
         agent_id: agent.agent_id,
         name: agent.name,
+        avatar_url: agent.avatar_url ?? null,
         strategy_type: agent.strategy_type,
         district: inferDistrict(agent),
         position: [x, 0, z],
