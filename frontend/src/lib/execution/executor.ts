@@ -1,10 +1,12 @@
-import { Contract, parseEther, formatEther, MaxUint256 } from 'ethers';
+import { Contract, Interface, parseEther, formatEther, MaxUint256 } from 'ethers';
 import { CONTRACTS } from '../config';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import SprawlTokenABI from '@/constants/abi/SprawlToken.json';
 import CityStateABI from '@/constants/abi/CityState.json';
+import RaidContractABI from '@/constants/abi/RaidContract.json';
 import { withTxLock } from './tx-lock';
 import { getAgentWallet } from './wallet-manager';
+import { getDeployerWallet } from '../ethers-provider';
 import { supabaseAdmin } from '../supabase';
 import type { AgentDecision, ExecutionResult } from '@/types/engine';
 import type { AgentRecord } from '@/types/agent';
@@ -22,6 +24,8 @@ export async function executeDecision(
             return executeAddLiquidity(agent, decision);
         case 'removeLiquidity':
             return executeRemoveLiquidity(agent, decision);
+        case 'raid':
+            return executeRaid(agent, decision);
         case 'hold':
             return { txHash: '', success: true, amountIn: '0', amountOut: '0', realizedPnl: 0 };
         default:
@@ -164,6 +168,101 @@ async function executeRemoveLiquidity(
             txHash: receipt.hash,
             success: true,
             amountIn: formatEther(shares),
+            amountOut: '0',
+            realizedPnl: 0,
+        };
+    });
+}
+
+const RAID_COST = '5';
+const MAX_RAIDS_PER_DAY = 3;
+
+// Autonomous raid: the agent picks a rival, burns 5 SPRAWL, the deployer settles
+// the on-chain raid (scoring + winner), and we record + grant raid XP. The indexer
+// syncs the raids table + raid_wins/losses from the RaidRecorded event.
+async function executeRaid(
+    agent: AgentRecord,
+    decision: AgentDecision,
+): Promise<ExecutionResult> {
+    return withTxLock(async () => {
+        const fail = (error: string): ExecutionResult => ({
+            txHash: '', success: false, amountIn: '0', amountOut: '0', realizedPnl: 0, error,
+        });
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const { count } = await supabaseAdmin
+            .from('raids')
+            .select('id', { count: 'exact', head: true })
+            .eq('attacker_id', agent.agent_id)
+            .gte('created_at', todayStart.toISOString());
+        if ((count ?? 0) >= MAX_RAIDS_PER_DAY) return fail('daily raid limit reached');
+
+        // Pick a rival: the target named by the decision, else a random other agent.
+        let defenderId = Number(decision.params?.targetId);
+        if (!defenderId || defenderId === agent.agent_id) {
+            const { data: rivals } = await supabaseAdmin
+                .from('agents')
+                .select('agent_id')
+                .neq('agent_id', agent.agent_id)
+                .not('wallet_address', 'is', null)
+                .limit(50);
+            if (!rivals || rivals.length === 0) return fail('no rival to raid');
+            defenderId = rivals[Math.floor(Math.random() * rivals.length)].agent_id;
+        }
+
+        const wallet = await getAgentWallet(agent.agent_id);
+        const cost = parseEther(RAID_COST);
+        const sprawl = new Contract(CONTRACTS.SPRAWL, SprawlTokenABI.abi, wallet);
+        const allowance: bigint = await sprawl.allowance(wallet.address, CONTRACTS.RaidContract);
+        if (allowance < cost) {
+            await (await sprawl.approve(CONTRACTS.RaidContract, MaxUint256)).wait();
+        }
+
+        const raid = new Contract(CONTRACTS.RaidContract, RaidContractABI.abi, getDeployerWallet());
+        const receipt = await (await raid.initiateRaid(agent.agent_id, defenderId, wallet.address)).wait();
+
+        const iface = new Interface(RaidContractABI.abi);
+        let attackerWon = false, attackScore = 0, defenseScore = 0;
+        for (const log of receipt.logs) {
+            try {
+                const p = iface.parseLog({ topics: log.topics, data: log.data });
+                if (p && p.name === 'RaidResult') {
+                    attackerWon = Boolean(p.args.attackerWon);
+                    attackScore = Number(p.args.attackScore);
+                    defenseScore = Number(p.args.defenseScore);
+                    break;
+                }
+            } catch { /* not a RaidResult log */ }
+        }
+
+        const xp = attackerWon ? 50 : 15;
+        await Promise.all([
+            supabaseAdmin.rpc('increment_raid_xp', { p_agent_id: agent.agent_id, p_amount: xp }),
+            supabaseAdmin.rpc('grant_xp', {
+                p_agent_id: agent.agent_id,
+                p_source: attackerWon ? 'raid_win' : 'raid_loss',
+                p_amount: xp,
+            }),
+        ]);
+
+        await supabaseAdmin.from('activity_feed').insert({
+            event_type: attackerWon ? 'raid_success' : 'raid_failed',
+            actor_id: agent.agent_id,
+            target_id: defenderId,
+            metadata: {
+                attacker_won: attackerWon,
+                attack_score: attackScore,
+                defense_score: defenseScore,
+                rationale: decision.rationale,
+                tx_hash: receipt.hash,
+            },
+        });
+
+        return {
+            txHash: receipt.hash,
+            success: true,
+            amountIn: RAID_COST,
             amountOut: '0',
             realizedPnl: 0,
         };
