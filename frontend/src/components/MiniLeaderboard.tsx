@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { avatarUrl } from "@/lib/avatar-url";
 
 const ACCENT = "#00ff88";
 
 interface AgentRow {
   agent_id: number;
   name: string | null;
+  avatar_url: string | null;
   sprawl_lifetime_earned: number;
   xp_level: number;
   total_volume: number;
@@ -65,7 +67,7 @@ export default function MiniLeaderboard({ onSelectAgent, contained }: MiniLeader
     const { data, error } = await supabase
       .from("agents")
       .select(
-        "agent_id, name, sprawl_lifetime_earned, xp_level, total_volume, raid_wins"
+        "agent_id, name, avatar_url, sprawl_lifetime_earned, xp_level, total_volume, raid_wins"
       )
       .order(field, { ascending: false })
       .limit(5);
@@ -152,6 +154,14 @@ export default function MiniLeaderboard({ onSelectAgent, contained }: MiniLeader
                   >
                     #{i + 1}
                   </span>
+                  <img
+                    src={avatarUrl(r.agent_id, r.avatar_url)}
+                    alt={`${r.name || `Agent #${r.agent_id}`} avatar`}
+                    width={18}
+                    height={18}
+                    className="shrink-0"
+                    style={{ imageRendering: "pixelated", border: "1px solid rgba(0,255,136,0.25)" }}
+                  />
                   <span className="truncate text-[11px] text-white/90">
                     {r.name || `Agent #${r.agent_id}`}
                   </span>

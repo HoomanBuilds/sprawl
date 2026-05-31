@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from('agents')
     .select(
-      'agent_id, name, strategy_type, xp_level, sprawl_lifetime_earned, total_volume, net_pnl, raid_wins, raid_losses, reputation_score, district, last_action_at',
+      'agent_id, name, avatar_url, strategy_type, xp_level, sprawl_lifetime_earned, total_volume, net_pnl, raid_wins, raid_losses, reputation_score, district, last_action_at',
       { count: 'exact' }
     )
     .order(sortBy, { ascending: false })

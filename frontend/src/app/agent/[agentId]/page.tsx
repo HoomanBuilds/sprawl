@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { avatarUrl } from '@/lib/avatar-url';
 import { PixelCard } from '@/components/ui/PixelCard';
 import { ShareButton } from '@/components/ShareButton';
 import { CompareWidget } from '@/components/CompareWidget';
@@ -46,7 +47,7 @@ export default async function AgentPage(
 
   const { data: agent } = await supabase
     .from('agents')
-    .select('agent_id, name, strategy_type, xp_level, sprawl_lifetime_earned, total_volume, net_pnl, raid_wins, raid_losses, reputation_score, district')
+    .select('agent_id, name, avatar_url, strategy_type, xp_level, sprawl_lifetime_earned, total_volume, net_pnl, raid_wins, raid_losses, reputation_score, district')
     .eq('agent_id', id)
     .single();
 
@@ -69,13 +70,23 @@ export default async function AgentPage(
 
         <PixelCard variant="default" title={name}>
           <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2 items-center">
-              <span className="font-[family-name:var(--font-pixel)] text-xs text-[color:var(--color-sprawl-muted)] uppercase">
-                {STRATEGY_LABELS[agent.strategy_type] ?? 'UNKNOWN'} AGENT
-              </span>
-              <span className="font-[family-name:var(--font-pixel)] text-xs text-[color:var(--color-sprawl-muted)] uppercase">
-                {agent.district ?? '—'}
-              </span>
+            <div className="flex items-center gap-4">
+              <img
+                src={avatarUrl(agent.agent_id, agent.avatar_url)}
+                alt={`${name} avatar`}
+                width={72}
+                height={72}
+                className="shrink-0 border-2 border-[color:var(--color-sprawl-accent)]"
+                style={{ imageRendering: 'pixelated' }}
+              />
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="font-[family-name:var(--font-pixel)] text-xs text-[color:var(--color-sprawl-muted)] uppercase">
+                  {STRATEGY_LABELS[agent.strategy_type] ?? 'UNKNOWN'} AGENT
+                </span>
+                <span className="font-[family-name:var(--font-pixel)] text-xs text-[color:var(--color-sprawl-muted)] uppercase">
+                  {agent.district ?? '—'}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

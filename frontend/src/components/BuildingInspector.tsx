@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getSupabaseBrowser } from "@/lib/supabase";
+import { avatarUrl } from "@/lib/avatar-url";
 import { MANTLE_SEPOLIA_EXPLORER, TOKEN_SYMBOLS } from "@/lib/config";
 import type { AgentRecord, PolicyRule } from "@/types/agent";
 
@@ -138,7 +139,7 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
 
   const strategy = STRATEGY[agent?.strategy_type ?? 0] ?? STRATEGY[0];
   const tier = tierFromLevel(agent?.xp_level ?? 1);
-  const netPnl = num(agent?.net_pnl);
+  const netPnl = num(agent?.net_pnl) / 1e18;
   const pnlPositive = netPnl > 0;
   const pnlColor = pnlPositive ? ACCENT : netPnl < 0 ? "#ff5577" : "#9090a0";
   const rules: PolicyRule[] = agent?.policy_config?.rules ?? [];
@@ -172,6 +173,14 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
         <div className="relative flex items-start gap-3 border-b border-white/10 px-4 py-4">
           {/* mobile drag handle */}
           <div className="absolute left-1/2 top-1.5 h-1 w-10 -translate-x-1/2 rounded-full bg-white/20 md:hidden" />
+          <img
+            src={avatarUrl(agent_id, agent?.avatar_url)}
+            alt={`${agent?.name || `Agent #${agent_id}`} avatar`}
+            width={56}
+            height={56}
+            className="shrink-0 border-2"
+            style={{ imageRendering: "pixelated", borderColor: "rgba(0,255,136,0.3)" }}
+          />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-base font-bold tracking-tight" style={{ color: ACCENT }}>
               {agent?.name || `Agent #${agent_id}`}
@@ -270,7 +279,7 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
                   <p className="mt-1 text-[9px] uppercase tracking-wider text-white/40">
                     Portfolio Value
                   </p>
-                  <p className="text-sm text-white/80">{fmt(num(agent.last_portfolio_value))}</p>
+                  <p className="text-sm text-white/80">{fmt(num(agent.last_portfolio_value) / 1e18)}</p>
                 </div>
               </div>
 
@@ -294,7 +303,7 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
 
               {/* ── Stats grid ── */}
               <div className="mb-4 grid grid-cols-2 gap-2">
-                <Stat label="$SPRAWL Earned" value={fmt(num(agent.sprawl_lifetime_earned))} accent />
+                <Stat label="$SPRAWL Earned" value={fmt(num(agent.sprawl_lifetime_earned) / 1e18)} accent />
                 <Stat label="Reputation" value={`${num(agent.reputation_score)}/100`} />
                 <Stat label="Total Volume" value={fmt(num(agent.total_volume))} />
                 <Stat

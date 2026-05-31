@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useLeaderboard, type SortField, type StrategyFilter } from '@/hooks/useLeaderboard';
+import { avatarUrl } from '@/lib/avatar-url';
 import { PixelButton } from '@/components/ui/PixelButton';
 import { PixelCard } from '@/components/ui/PixelCard';
 
@@ -109,8 +110,16 @@ export default function LeaderboardPage() {
                       <td className="py-3 px-3">
                         <a
                           href={`/agent/${agent.agent_id}`}
-                          className="font-[family-name:var(--font-pixel)] text-sm text-[color:var(--color-sprawl-cream)] hover:text-[color:var(--color-sprawl-accent)] uppercase"
+                          className="flex items-center gap-2 font-[family-name:var(--font-pixel)] text-sm text-[color:var(--color-sprawl-cream)] hover:text-[color:var(--color-sprawl-accent)] uppercase"
                         >
+                          <img
+                            src={avatarUrl(agent.agent_id, agent.avatar_url)}
+                            alt={`${agent.name ?? `Agent #${agent.agent_id}`} avatar`}
+                            width={26}
+                            height={26}
+                            className="shrink-0 border border-[color:var(--color-sprawl-border)]"
+                            style={{ imageRendering: 'pixelated' }}
+                          />
                           {agent.name ?? `Agent #${agent.agent_id}`}
                         </a>
                       </td>

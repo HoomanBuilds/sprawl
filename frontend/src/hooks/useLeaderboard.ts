@@ -7,6 +7,7 @@ export interface LeaderboardAgent {
   rank: number;
   agent_id: number;
   name: string;
+  avatar_url: string | null;
   strategy_type: 0 | 1 | 2;
   xp_level: number;
   sprawl_lifetime_earned: number;
