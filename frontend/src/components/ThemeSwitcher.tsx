@@ -7,6 +7,8 @@ const THEMES = [
   { name: "Midnight", color: "#4a6cf7" },
   { name: "Sunset", color: "#ff7a45" },
   { name: "Neon", color: "#ff00ff" },
+  { name: "Sunrise", color: "#ff9050" },
+  { name: "Daylight", color: "#7cb9e8" },
 ] as const;
 
 const STORAGE_KEY = "sprawl.theme";

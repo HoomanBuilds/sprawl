@@ -20,10 +20,12 @@ void seededRandom;
 // ─── Theme Definitions ───────────────────────────────────────
 
 export const THEME_NAMES = [
+  "Emerald",
   "Midnight",
   "Sunset",
   "Neon",
-  "Emerald",
+  "Sunrise",
+  "Daylight",
 ] as const;
 
 export interface BuildingColors {
@@ -148,6 +150,49 @@ const THEMES: CityTheme[] = [
       accent: "#e040c0",
     },
     waterColor: "#0c0830", waterEmissive: "#1008a0", dockColor: "#2a1838",
+  },
+  // 4 – Sunrise (warm dawn — bright and golden, not dark)
+  {
+    sky: [
+      [0, "#1a1830"], [0.18, "#3a2a50"], [0.32, "#7a4a68"], [0.43, "#c0705e"],
+      [0.51, "#f0a060"], [0.58, "#f8c878"], [0.70, "#f4dca0"], [0.85, "#ccc0b0"],
+      [1, "#7a7a90"],
+    ],
+    fogColor: "#cf9c78", fogNear: 450, fogFar: 4000,
+    ambientColor: "#e8b894", ambientIntensity: 0.75,
+    sunColor: "#ffd0a0", sunIntensity: 1.05, sunPos: [420, 70, -320],
+    fillColor: "#8088c8", fillIntensity: 0.4, fillPos: [-220, 70, 220],
+    hemiSky: "#e8b8a8", hemiGround: "#5a4a48", hemiIntensity: 0.6,
+    groundColor: "#463e42", grid1: "#5c4e52", grid2: "#4e4246",
+    roadMarkingColor: "#f4c468",
+    sidewalkColor: "#62565a",
+    building: {
+      windowLit: ["#ffd890", "#ffb870", "#f09850", "#ffe0a0", "#ffc060"],
+      windowOff: "#181016", face: "#2a1e24", roof: "#5e424c",
+      accent: "#ff9050",
+    },
+    waterColor: "#3a3052", waterEmissive: "#5a4064", dockColor: "#4a3020",
+  },
+  // 5 – Daylight (bright blue-sky day — clean, aesthetic, sunlit)
+  {
+    sky: [
+      [0, "#2f6fb0"], [0.28, "#4f93d2"], [0.5, "#7cb9e8"], [0.7, "#b2daf0"],
+      [0.85, "#d8ecf8"], [1, "#ecf5fc"],
+    ],
+    fogColor: "#d2e4f1", fogNear: 700, fogFar: 5200,
+    ambientColor: "#ffffff", ambientIntensity: 0.95,
+    sunColor: "#fff4e0", sunIntensity: 1.35, sunPos: [320, 420, -220],
+    fillColor: "#a6c4e4", fillIntensity: 0.5, fillPos: [-220, 160, 220],
+    hemiSky: "#bfdcff", hemiGround: "#9aa88c", hemiIntensity: 0.95,
+    groundColor: "#9cae8a", grid1: "#aebfa0", grid2: "#a6b598",
+    roadMarkingColor: "#ffffff",
+    sidewalkColor: "#cbcfc6",
+    building: {
+      windowLit: ["#bcd8f0", "#d8e8f8", "#ffffff", "#cfe4f5", "#e8f2ff"],
+      windowOff: "#7d8c9c", face: "#cdd5dd", roof: "#bcc4cc",
+      accent: "#ff8c2a",
+    },
+    waterColor: "#5aa0d0", waterEmissive: "#3a80c0", dockColor: "#8a7050",
   },
 ];
 
