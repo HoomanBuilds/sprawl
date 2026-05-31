@@ -110,6 +110,18 @@ export function computeBuildingDepth(agent: AgentRecord): number {
   return Math.round(12 + score * 20 + jitter);
 }
 
+// Performance scale: live P&L swells (profit) or shrinks (loss) the whole
+// building, symmetric with cumulative growth. Losses bite ~1.8x harder so a
+// struggling agent's tower visibly contracts. net_pnl and last_portfolio_value
+// are both wei, so their ratio is the unitless relative return. → 0.5x .. 1.3x
+export function computePerfScale(agent: AgentRecord): number {
+  const baseline = Number(agent.last_portfolio_value) || 0;
+  if (baseline <= 0) return 1;
+  const ratio = (Number(agent.net_pnl) || 0) / baseline;
+  const k = ratio < 0 ? 1.8 : 1.0;
+  return Math.max(0.5, Math.min(1.3, 1 + ratio * k));
+}
+
 // Glow: reputation_score normalized 0-1 (from ERC-8004)
 export function computeGlow(agent: AgentRecord): number {
   return Math.max(0, Math.min(1, agent.reputation_score / 100));
@@ -196,9 +208,11 @@ export function generateCityLayout(agents: AgentRecord[]): {
       const x = blockWorldX + lotCol * (LOT_W + ALLEY_W);
       const z = blockWorldZ + lotRow * (LOT_D + ALLEY_W);
 
-      const height = computeBuildingHeight(agent);
-      const width = computeBuildingWidth(agent);
-      const depth = computeBuildingDepth(agent);
+      // Live P&L scales the whole building up (profit) or down (loss).
+      const perf = computePerfScale(agent);
+      const height = computeBuildingHeight(agent) * perf;
+      const width = Math.max(8, Math.round(computeBuildingWidth(agent) * perf));
+      const depth = Math.max(8, Math.round(computeBuildingDepth(agent) * perf));
       const litPercentage = computeLitPercentage(agent);
       const tint = computeBuildingTint(agent);
       const glow = computeGlow(agent);
