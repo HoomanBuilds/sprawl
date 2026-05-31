@@ -401,10 +401,12 @@ async function tickLoop(config: EngineConfig): Promise<void> {
                 console.error(`[TickLoop] Scheduled raid failed: ${(err as Error).message}`);
             }
 
-            // Run daily settlement check (settles agents whose last_settlement_date != today at midnight UTC)
+            // Settlement: full daily settle at midnight UTC + a rolling settle
+            // every few minutes so $SPRAWL earned moves live during a demo.
             try {
-                const { settlementCron } = await import('./settlement');
+                const { settlementCron, rollingSettlementCron } = await import('./settlement');
                 await settlementCron();
+                await rollingSettlementCron();
             } catch (err: any) {
                 console.error(`[TickLoop] Settlement cron error: ${err.message}`);
             }
