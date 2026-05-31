@@ -6,6 +6,7 @@ import { OrbitControls, Stats, PerformanceMonitor } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import CityScene from "./CityScene";
+import RoamingAgents from "./RoamingAgents";
 import type { FocusInfo } from "./CityScene";
 import type { CityBuilding } from "@/types/city";
 import { seededRandom } from "@/lib/city-layout";
@@ -506,6 +507,14 @@ export default function CityCanvas({
     [totalCitySprawl]
   );
 
+  const handleSelect = useCallback(
+    (id: number) => {
+      const b = buildings.find((x) => x.agent_id === id);
+      if (b && onBuildingClick) onBuildingClick(b);
+    },
+    [buildings, onBuildingClick]
+  );
+
   return (
     <Canvas
       camera={{ position: [-400, 450, -600], fov: 55, near: 0.5, far: 15000 }}
@@ -564,6 +573,8 @@ export default function CityCanvas({
         cityEnergy={cityEnergy}
         lowPerf={lowPerf}
       />
+
+      {!introMode && <RoamingAgents buildings={buildings} onSelect={handleSelect} />}
 
       {bloomEnabled && !lowPerf && (
         <EffectComposer multisampling={0}>
