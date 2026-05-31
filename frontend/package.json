@@ -13,6 +13,7 @@
     "run-all": "tsx scripts/run-all.ts"
   },
   "dependencies": {
+    "@imgly/background-removal-node": "^1.4.5",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
