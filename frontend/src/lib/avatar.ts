@@ -79,13 +79,61 @@ async function fromTogether(prompt: string): Promise<Buffer> {
   return Buffer.from(b64, "base64");
 }
 
+async function fromCloudflare(prompt: string): Promise<Buffer> {
+  const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!acct || !token) throw new Error("no Cloudflare creds");
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${acct}/ai/run/@cf/black-forest-labs/flux-1-schnell`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ prompt, steps: 6 }),
+      signal: AbortSignal.timeout(50000),
+    }
+  );
+  if (!res.ok) throw new Error(`cloudflare ${res.status}`);
+  const json = (await res.json()) as { result?: { image?: string } };
+  const b64 = json.result?.image;
+  if (!b64) throw new Error("cloudflare no image");
+  return Buffer.from(b64, "base64");
+}
+
+async function fromGemini(prompt: string): Promise<Buffer> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("no Gemini key");
+  const model = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ["IMAGE"] },
+      }),
+      signal: AbortSignal.timeout(50000),
+    }
+  );
+  if (!res.ok) throw new Error(`gemini ${res.status}`);
+  const json = (await res.json()) as {
+    candidates?: { content?: { parts?: { inlineData?: { data?: string } }[] } }[];
+  };
+  const part = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+  const b64 = part?.inlineData?.data;
+  if (!b64) throw new Error("gemini no image");
+  return Buffer.from(b64, "base64");
+}
+
 // Try every free AI generator before giving up: keyed free-tier providers first
 // (reliable when configured), then no-key Pollinations with seed rotation + backoff.
 async function generateAvatar(strategyType: number, agentId: number): Promise<Buffer | null> {
   const prompt = buildPrompt(strategyType);
 
   const keyed: Array<() => Promise<Buffer>> = [];
+  if (process.env.GEMINI_API_KEY) keyed.push(() => fromGemini(prompt));
   if (process.env.TOGETHER_API_KEY) keyed.push(() => fromTogether(prompt));
+  if (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) keyed.push(() => fromCloudflare(prompt));
   if (process.env.HUGGINGFACE_API_KEY) keyed.push(() => fromHuggingFace(prompt));
   for (const gen of keyed) {
     try { return await gen(); }
