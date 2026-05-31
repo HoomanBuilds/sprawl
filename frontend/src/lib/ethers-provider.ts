@@ -2,10 +2,12 @@ import { JsonRpcProvider, Wallet } from "ethers";
 import { MANTLE_SEPOLIA_RPC, MANTLE_SEPOLIA_CHAIN_ID } from "./config";
 
 export function getMantleSepoliaProvider(): JsonRpcProvider {
-  return new JsonRpcProvider(MANTLE_SEPOLIA_RPC, {
-    chainId: MANTLE_SEPOLIA_CHAIN_ID,
-    name: "mantle-sepolia",
-  });
+  return new JsonRpcProvider(
+    MANTLE_SEPOLIA_RPC,
+    { chainId: MANTLE_SEPOLIA_CHAIN_ID, name: "mantle-sepolia" },
+    // Many free RPCs reject JSON-RPC batches; send one request at a time.
+    { batchMaxCount: 1 }
+  );
 }
 
 export function getDeployerWallet(): Wallet {

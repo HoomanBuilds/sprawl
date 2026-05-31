@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Wallet, Contract, Interface } from "ethers";
+import { Wallet, Contract, Interface, parseEther } from "ethers";
 import { getAuthenticatedAddress } from "@/lib/auth";
 import { validatePolicy } from "@/lib/policy-schema";
 import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
@@ -166,6 +166,15 @@ export async function POST(req: NextRequest) {
     );
     const fundTx = await faucet.fundNewAgent(agentAddress, { nonce: nonce++ });
     await fundTx.wait();
+
+    // e2. Fund the agent wallet with MNT for gas — the faucet only mints tokens,
+    //     and the agent signs its own swaps, so it needs gas to trade.
+    const gasTx = await deployer.sendTransaction({
+      to: agentAddress,
+      value: parseEther("0.3"),
+      nonce: nonce++,
+    });
+    await gasTx.wait();
 
     // f. Register the agent in CityState (deployer signs).
     const cityState = new Contract(
