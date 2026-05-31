@@ -36,4 +36,5 @@ export interface CityBuilding {
     expires_at: string;
   } | null;
   is_active: boolean;
+  is_landmark: boolean;
 }

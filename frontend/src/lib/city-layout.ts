@@ -157,6 +157,11 @@ export const DISTRICT_NAMES: Record<string, string> = {
 };
 
 export const DISTRICT_COLORS: Record<string, string> = {
+  // Geographic zones (seeded agents use these)
+  Core: "#fbbf24",
+  Heights: "#22d3ee",
+  Outskirts: "#22c55e",
+  // Strategy districts
   downtown: "#fbbf24",
   yield: "#22c55e",
   trading: "#3b82f6",
@@ -164,6 +169,27 @@ export const DISTRICT_COLORS: Record<string, string> = {
   degen: "#ef4444",
   balanced: "#a855f7",
 };
+
+// Fallback roof color by strategy when the district has no mapped color, so
+// every building still carries a distinct identity hue.
+const STRATEGY_ROOF_COLORS: Record<number, string> = {
+  0: "#22c55e", // conservative / yield → green
+  1: "#3b82f6", // momentum / rules → blue
+  2: "#ef4444", // LLM / degen → red
+};
+
+// Resolve a building's roof (district identity) color.
+export function buildingRoofColor(
+  district: string | undefined,
+  strategyType: number,
+  fallback: string
+): string {
+  return (
+    (district ? DISTRICT_COLORS[district] : undefined) ??
+    STRATEGY_ROOF_COLORS[strategyType] ??
+    fallback
+  );
+}
 
 const STRATEGY_TO_DISTRICT: Record<number, string> = {
   0: "yield", // Conservative Yield preset
@@ -189,6 +215,17 @@ export function generateCityLayout(agents: AgentRecord[]): {
   const sorted = [...agents].sort(
     (a, b) => computeBuildingHeight(b) - computeBuildingHeight(a)
   );
+
+  // The biggest lifetime earner gets landmark treatment (crown + beacon).
+  let landmarkId = -1;
+  let topEarned = -Infinity;
+  for (const a of agents) {
+    const earned = Number(a.sprawl_lifetime_earned) || 0;
+    if (earned > topEarned) {
+      topEarned = earned;
+      landmarkId = a.agent_id;
+    }
+  }
 
   const LOTS_PER_BLOCK = BLOCK_SIZE * BLOCK_SIZE; // 16
   const totalBlocks = Math.ceil(sorted.length / LOTS_PER_BLOCK);
@@ -252,6 +289,7 @@ export function generateCityLayout(agents: AgentRecord[]): {
         loadout: { crown: null, roof: null, aura: null },
         active_raid_tag: null,
         is_active,
+        is_landmark: agent.agent_id === landmarkId,
       });
     }
   }

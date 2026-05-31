@@ -5,6 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { CityBuilding } from "@/types/city";
 import type { BuildingColors } from "./CityCanvas";
+import { buildingRoofColor } from "@/lib/city-layout";
 
 // ─── Atlas Constants (must match Building3D.tsx) ───────────────
 const ATLAS_SIZE = 2048;
@@ -20,6 +21,7 @@ const vertexShader = /* glsl */ `
   attribute float aRise;
   attribute vec4 aTint;
   attribute float aLive;
+  attribute vec3 aRoofColor;
 
   varying vec2 vUv;
   varying vec3 vNormal;
@@ -29,6 +31,7 @@ const vertexShader = /* glsl */ `
   varying float vInstanceId;
   varying vec4 vTint;
   varying float vLive;
+  varying vec3 vRoofColor;
 
   void main() {
     vUv = uv;
@@ -37,6 +40,7 @@ const vertexShader = /* glsl */ `
     vUvSide = aUvSide;
     vTint = aTint;
     vLive = aLive;
+    vRoofColor = aRoofColor;
 
     // Rise animation: modulate Y position by aRise (0 = underground, 1 = full height)
     vec3 localPos = position;
@@ -71,6 +75,7 @@ const fragmentShader = /* glsl */ `
   varying float vInstanceId;
   varying vec4 vTint;
   varying float vLive;
+  varying vec3 vRoofColor;
 
   void main() {
     // Early discard: skip fragments fully inside fog (invisible anyway)
@@ -108,8 +113,8 @@ const fragmentShader = /* glsl */ `
     vec3 liveBoost = vec3(1.4, 1.35, 1.2);
     wallFinal = mix(wallFinal, wallFinal * liveBoost, vLive);
 
-    // Roof: solid color with emissive, also scaled by city energy
-    vec3 roofFinal = uRoofColor * (0.4 + 1.4 * uCityEnergy);
+    // Roof: per-building district color with emissive, scaled by city energy.
+    vec3 roofFinal = vRoofColor * (0.4 + 1.4 * uCityEnergy);
 
     vec3 color = mix(wallFinal, roofFinal, isRoof);
 
@@ -254,14 +259,22 @@ export default memo(function InstancedBuildings({
   }, [material, atlasTexture, colors.roof, colors.face]);
 
   // Per-instance attribute buffers
-  const { uvFrontData, uvSideData, riseData, tintData } = useMemo(() => {
+  const { uvFrontData, uvSideData, riseData, tintData, roofColorData } = useMemo(() => {
     const uvF = new Float32Array(count * 4);
     const uvS = new Float32Array(count * 4);
     const rise = new Float32Array(count);
     const tint = new Float32Array(count * 4);
+    const roof = new Float32Array(count * 3);
+    const _col = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
       const b = buildings[i];
+
+      // Roof carries district identity (neighborhood color); falls back to theme.
+      _col.set(buildingRoofColor(b.district, b.strategy_type, colors.roof));
+      roof[i * 3 + 0] = _col.r;
+      roof[i * 3 + 1] = _col.g;
+      roof[i * 3 + 2] = _col.b;
       const seed =
         b.name.split("").reduce((a, c) => a + c.charCodeAt(0), 0) * 137 +
         b.agent_id * 7919;
@@ -302,8 +315,8 @@ export default memo(function InstancedBuildings({
       }
     }
 
-    return { uvFrontData: uvF, uvSideData: uvS, riseData: rise, tintData: tint };
-  }, [buildings, count]);
+    return { uvFrontData: uvF, uvSideData: uvS, riseData: rise, tintData: tint, roofColorData: roof };
+  }, [buildings, count, colors.roof]);
 
   // Live presence attribute (updated dynamically)
   const liveData = useMemo(() => new Float32Array(count), [count]);
@@ -351,6 +364,7 @@ export default memo(function InstancedBuildings({
     const riseAttr = new THREE.InstancedBufferAttribute(riseData, 1);
     riseAttr.setUsage(THREE.DynamicDrawUsage);
     const tintAttr = new THREE.InstancedBufferAttribute(tintData, 4);
+    const roofColorAttr = new THREE.InstancedBufferAttribute(roofColorData, 3);
 
     const liveAttr = new THREE.InstancedBufferAttribute(liveData, 1);
     liveAttr.setUsage(THREE.DynamicDrawUsage);
@@ -359,6 +373,7 @@ export default memo(function InstancedBuildings({
     mesh.geometry.setAttribute("aUvSide", uvSideAttr);
     mesh.geometry.setAttribute("aRise", riseAttr);
     mesh.geometry.setAttribute("aTint", tintAttr);
+    mesh.geometry.setAttribute("aRoofColor", roofColorAttr);
     mesh.geometry.setAttribute("aLive", liveAttr);
 
     if (hasPlayedRiseGlobal) {
@@ -376,7 +391,7 @@ export default memo(function InstancedBuildings({
     }
 
     mesh.count = count;
-  }, [buildings, count, uvFrontData, uvSideData, riseData, tintData, liveData]);
+  }, [buildings, count, uvFrontData, uvSideData, riseData, tintData, roofColorData, liveData]);
 
   // Sync fog uniforms (only when values actually change, e.g. theme switch)
   // Also smoothly lerp cityEnergy uniform toward target value

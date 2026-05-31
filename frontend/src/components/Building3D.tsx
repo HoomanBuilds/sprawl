@@ -421,6 +421,73 @@ export const BuildingItemEffects = memo(function BuildingItemEffects({ building,
   );
 });
 
+// ─── XP Tier Effects (level-based building glow-ups) ──────────
+// Reused by EffectsLayer so the instanced render path shows tier upgrades:
+// staging (Lv5-8) → production → open_source → unicorn → founder (Lv24+).
+export const BuildingTierEffects = memo(function BuildingTierEffects({
+  building,
+}: {
+  building: CityBuilding;
+}) {
+  if ((building.xp_level ?? 1) < 5) return null;
+  const tier = tierFromLevel(building.xp_level);
+  const { width, height, depth } = building;
+  return (
+    <>
+      {tier.id === "staging" && (
+        <TierNeonTrim width={width} height={height} depth={depth} color={tier.color} />
+      )}
+      {(tier.id === "production" || tier.id === "open_source") && (
+        <>
+          <TierBaseGlow width={width} depth={depth} color={tier.color} />
+          <TierNeonTrim width={width} height={height} depth={depth} color={tier.color} />
+        </>
+      )}
+      {tier.id === "unicorn" && (
+        <>
+          <TierBaseGlow width={width} depth={depth} color={tier.color} />
+          <TierNeonTrim width={width} height={height} depth={depth} color={tier.color} />
+          <TierSkyBeam height={height} color={tier.color} />
+        </>
+      )}
+      {tier.id === "founder" && (
+        <>
+          <TierBaseGlow width={width} depth={depth} color={tier.color} />
+          <TierNeonTrim width={width} height={height} depth={depth} color={tier.color} />
+          <TierSkyBeam height={height} color={tier.color} prismatic />
+        </>
+      )}
+    </>
+  );
+});
+
+// ─── Rooftop Ornament (skyline silhouette variety by strategy) ─
+// 0 = conservative/yield → garden, 1 = momentum → spire, 2 = LLM/degen → antenna.
+export const BuildingRoofOrnament = memo(function BuildingRoofOrnament({
+  building,
+}: {
+  building: CityBuilding;
+}) {
+  const { width, height, depth, strategy_type } = building;
+  if (strategy_type === 1) return <Spire height={height} width={width} depth={depth} />;
+  if (strategy_type === 2) return <AntennaArray height={height} width={width} depth={depth} />;
+  return <RooftopGarden height={height} width={width} depth={depth} />;
+});
+
+// ─── Landmark (top agent: gold crown + sky beam) ──────────────
+export const BuildingLandmark = memo(function BuildingLandmark({
+  building,
+}: {
+  building: CityBuilding;
+}) {
+  return (
+    <>
+      <CrownItem height={building.height} color="#ffd24a" focused />
+      <TierSkyBeam height={building.height} color="#ffd24a" />
+    </>
+  );
+});
+
 // ─── Main Building Component ─────────────────────────────────
 
 interface Props {

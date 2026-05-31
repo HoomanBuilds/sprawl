@@ -4,7 +4,12 @@ import { useState, useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { CityBuilding } from "@/types/city";
 import type { BuildingColors } from "./CityCanvas";
-import { BuildingItemEffects } from "./Building3D";
+import {
+  BuildingItemEffects,
+  BuildingTierEffects,
+  BuildingRoofOrnament,
+  BuildingLandmark,
+} from "./Building3D";
 import RaidTag3D from "./RaidTag3D";
 import { memo } from "react";
 
@@ -28,6 +33,10 @@ const ActiveBuildingEffects = memo(function ActiveBuildingEffects({
         accentColor={accentColor}
         focused={isFocused}
       />
+      {/* Level-based glow-ups + per-strategy rooftop silhouette */}
+      <BuildingTierEffects building={building} />
+      <BuildingRoofOrnament building={building} />
+      {building.is_landmark && <BuildingLandmark building={building} />}
       {building.active_raid_tag && (
         <RaidTag3D
           width={building.width}
@@ -79,11 +88,10 @@ const LOW_PERF_RADIUS = 120;
 const LOW_PERF_RADIUS_HYSTERESIS = 160;
 const LOW_PERF_MAX_ACTIVE = 8;
 
-// Does this building have anything to render in the effects layer?
-function hasEffects(b: CityBuilding): boolean {
-  const lo = b.loadout;
-  const hasLoadout = !!(lo && (lo.crown || lo.roof || lo.aura));
-  return hasLoadout || !!b.active_raid_tag;
+// Every building now has a rooftop ornament (and may have tier glow-ups /
+// landmark / raid tag), so all nearby buildings qualify for the effects LOD.
+function hasEffects(_b: CityBuilding): boolean {
+  return true;
 }
 
 // ─── Component ─────────────────────────────────────────────────
