@@ -170,11 +170,14 @@ async function handleRaidRecorded(attackerId: bigint, defenderId: bigint, attack
 async function handleSwap(
     trader: string, tokenIn: string, tokenOut: string,
     amountIn: bigint, amountOut: bigint, priceAfter: bigint, fee: bigint,
-    event?: EventLog,
+    event?: EventLog | { log?: EventLog } | { transactionHash?: string },
 ): Promise<void> {
     const symIn = symbolFromAddress(tokenIn);
     const symOut = symbolFromAddress(tokenOut);
-    const txHash = event?.transactionHash ?? 'unknown';
+    // Catch-up passes an EventLog (.transactionHash); the live listener passes a
+    // ContractEventPayload (.log.transactionHash). Handle both.
+    const ev = event as { transactionHash?: string; log?: { transactionHash?: string } } | undefined;
+    const txHash = ev?.transactionHash ?? ev?.log?.transactionHash ?? 'unknown';
     console.log(`[Indexer] Swap: ${trader} ${formatEther(amountIn)} ${symIn} -> ${formatEther(amountOut)} ${symOut} (tx: ${txHash.slice(0, 10)})`);
 
     try {

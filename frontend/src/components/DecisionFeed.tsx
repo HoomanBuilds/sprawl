@@ -112,7 +112,8 @@ export default function DecisionFeed({ contained = false }: { contained?: boolea
         .limit(MAX_EVENTS)
         .then(({ data }) => {
           if (cancelled || !data) return;
-          setEvents(data as FeedEvent[]);
+          // Hide market-maker / price-keeper activity (null actor "The City").
+          setEvents((data as FeedEvent[]).filter((e) => e.actor_id != null));
         });
     };
     loadFeed();
@@ -132,6 +133,7 @@ export default function DecisionFeed({ contained = false }: { contained?: boolea
           metadata: (p.metadata as Record<string, unknown>) ?? {},
           created_at: p.timestamp ?? new Date().toISOString(),
         };
+        if (next.actor_id == null) return; // skip market-maker noise
         setEvents((prev) => [next, ...prev].slice(0, MAX_EVENTS));
       })
       .subscribe();

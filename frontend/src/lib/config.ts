@@ -18,7 +18,7 @@ export const CONTRACTS = {
 export const MANTLE_SEPOLIA_CHAIN_ID = 5003;
 export const MANTLE_SEPOLIA_RPC =
   process.env.MANTLE_SEPOLIA_RPC_URL || "https://rpc.sepolia.mantle.xyz";
-export const MANTLE_SEPOLIA_EXPLORER = "https://explorer.sepolia.mantle.xyz";
+export const MANTLE_SEPOLIA_EXPLORER = "https://sepolia.mantlescan.xyz";
 
 export const ERC8004 = {
   IdentityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",

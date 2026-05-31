@@ -139,7 +139,7 @@ export default function ActivityTicker() {
       .limit(MAX_EVENTS)
       .then(({ data }) => {
         if (cancelledRef.current || !data) return;
-        setEvents(data as FeedEvent[]);
+        setEvents((data as FeedEvent[]).filter((e) => e.actor_id != null));
       });
 
     // Live broadcast on 'city-feed' (indexer emits every event here).
@@ -158,6 +158,7 @@ export default function ActivityTicker() {
           metadata: (p.metadata as Record<string, unknown>) ?? {},
           created_at: p.timestamp ?? new Date().toISOString(),
         };
+        if (next.actor_id == null) return; // skip market-maker noise
         setEvents((prev) => [next, ...prev].slice(0, MAX_EVENTS));
       })
       .subscribe();
