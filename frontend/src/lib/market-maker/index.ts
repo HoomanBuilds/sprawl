@@ -86,7 +86,6 @@ function isPriceStale(): boolean {
 const ARB_THRESHOLD_PCT = 0.5;
 const NOISE_MIN_PCT = 0.001;
 const NOISE_MAX_PCT = 0.003;
-const MAX_SLIPPAGE_BPS = 200;
 
 const TOKEN_ADDRESSES: Record<string, string> = {
     sETH: CONTRACTS.sETH,
@@ -163,6 +162,9 @@ async function findArbOpportunities(): Promise<ArbOpportunity[]> {
     return opportunities.sort((a, b) => Math.abs(b.spreadPct) - Math.abs(a.spreadPct));
 }
 
+// Size a corrective swap to drag the pool price all the way to the real price
+// (constant-product peg). As the peg-keeper, the bot intentionally moves the
+// price, so minOut = 0 — slippage protection would defeat the purpose.
 async function executeArb(opp: ArbOpportunity): Promise<string | null> {
     return withTxLock(async () => {
         const wallet = getDeployerWallet();
@@ -171,44 +173,42 @@ async function executeArb(opp: ArbOpportunity): Promise<string | null> {
         const tokenAddress = TOKEN_ADDRESSES[opp.token];
         const usdcAddress = CONTRACTS.sUSDC;
 
-        const tradeValueUSD = 500;
+        // Read live reserves to compute the exact peg swap.
+        const poolId = await dex.getPoolId(tokenAddress, usdcAddress);
+        const pi = await dex.getPoolInfo(poolId);
+        const tokenIsA = pi.tokenA.toLowerCase() === tokenAddress.toLowerCase();
+        const reserveToken = parseFloat(formatEther(tokenIsA ? pi.reserveA : pi.reserveB));
+        const reserveUSDC = parseFloat(formatEther(tokenIsA ? pi.reserveB : pi.reserveA));
+        const feeRate = Number(pi.feeNumerator) / Number(pi.feeDenominator);
 
-        if (opp.direction === 'buy') {
-            const amountIn = parseEther(tradeValueUSD.toString());
-            const expectedOut = tradeValueUSD / opp.dexPrice;
-            const minOut = parseEther(
-                (expectedOut * (1 - MAX_SLIPPAGE_BPS / 10000)).toFixed(18)
-            );
+        const k = reserveToken * reserveUSDC;
+        const targetUSDC = Math.sqrt(k * opp.realPrice);
+        const targetToken = Math.sqrt(k / opp.realPrice);
 
-            const usdcToken = new Contract(usdcAddress, SprawlTokenABI.abi, wallet);
-            const allowance: bigint = await usdcToken.allowance(wallet.address, CONTRACTS.SprawlDEX);
-            if (allowance < amountIn) {
-                const tx = await usdcToken.approve(CONTRACTS.SprawlDEX, MaxUint256);
-                await tx.wait();
-            }
+        // buy = price too low → swap USDC in; sell = price too high → swap token in.
+        const inAddr = opp.direction === 'buy' ? usdcAddress : tokenAddress;
+        const outAddr = opp.direction === 'buy' ? tokenAddress : usdcAddress;
+        let amountInHuman =
+            opp.direction === 'buy'
+                ? (targetUSDC - reserveUSDC) / (1 - feeRate)
+                : (targetToken - reserveToken) / (1 - feeRate);
+        if (amountInHuman <= 0) return null;
 
-            const tx = await dex.swap(usdcAddress, tokenAddress, amountIn, minOut);
-            const receipt = await tx.wait();
-            return receipt.hash;
-        } else {
-            const amountToken = tradeValueUSD / opp.dexPrice;
-            const amountIn = parseEther(amountToken.toFixed(18));
-            const expectedOut = amountToken * opp.dexPrice;
-            const minOut = parseEther(
-                (expectedOut * (1 - MAX_SLIPPAGE_BPS / 10000)).toFixed(18)
-            );
+        // Cap to what the deployer actually holds.
+        const inToken = new Contract(inAddr, SprawlTokenABI.abi, wallet);
+        const balance = parseFloat(formatEther(await inToken.balanceOf(wallet.address)));
+        amountInHuman = Math.min(amountInHuman, balance * 0.95);
+        if (amountInHuman <= 0) return null;
 
-            const token = new Contract(tokenAddress, SprawlTokenABI.abi, wallet);
-            const allowance: bigint = await token.allowance(wallet.address, CONTRACTS.SprawlDEX);
-            if (allowance < amountIn) {
-                const tx = await token.approve(CONTRACTS.SprawlDEX, MaxUint256);
-                await tx.wait();
-            }
-
-            const tx = await dex.swap(tokenAddress, usdcAddress, amountIn, minOut);
-            const receipt = await tx.wait();
-            return receipt.hash;
+        const amountIn = parseEther(amountInHuman.toFixed(18));
+        const allowance: bigint = await inToken.allowance(wallet.address, CONTRACTS.SprawlDEX);
+        if (allowance < amountIn) {
+            await (await inToken.approve(CONTRACTS.SprawlDEX, MaxUint256)).wait();
         }
+
+        const tx = await dex.swap(inAddr, outAddr, amountIn, 0n);
+        const receipt = await tx.wait();
+        return receipt.hash;
     });
 }
 
