@@ -102,7 +102,7 @@ function CityPage() {
         onIntroEnd={() => setIntroMode(false)}
       />
 
-      <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
+      <div className="fixed left-1/2 top-16 z-50 -translate-x-1/2">
         <SprawlPriceSparkline />
       </div>
 
