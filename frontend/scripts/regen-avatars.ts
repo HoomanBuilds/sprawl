@@ -12,13 +12,13 @@ async function main() {
   const { ensureAvatar } = await import("../src/lib/avatar");
   const sb = getSupabaseAdmin();
 
-  const { data } = await sb
-    .from("agents")
-    .select("agent_id, strategy_type, avatar_url")
-    .like("avatar_url", "%dicebear%");
+  // Pass "all" to regenerate every agent; default regenerates only DiceBear ones.
+  let q = sb.from("agents").select("agent_id, strategy_type, avatar_url").order("agent_id");
+  if (process.argv[2] !== "all") q = q.like("avatar_url", "%dicebear%");
+  const { data } = await q;
 
   const targets = data ?? [];
-  console.log(`Regenerating AI avatars for ${targets.length} DiceBear agents (10s spacing)…`);
+  console.log(`Regenerating AI avatars for ${targets.length} agents…`);
 
   for (const a of targets) {
     const url = await ensureAvatar(a.agent_id, a.strategy_type);
