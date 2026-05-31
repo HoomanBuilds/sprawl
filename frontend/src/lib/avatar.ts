@@ -9,7 +9,7 @@ const ARCHETYPE: Record<number, string> = {
 
 const STYLE =
   "16-bit pixel art creature sprite, chibi style, vivid saturated colors, " +
-  "sharp pixel edges, solid pure white background, centered, full body, facing viewer";
+  "sharp pixel edges, solid flat white background, centered, full body, facing viewer";
 
 function buildPrompt(strategyType: number): string {
   return `${ARCHETYPE[strategyType] ?? ARCHETYPE[0]}, ${STYLE}`;
@@ -19,25 +19,116 @@ export function dicebearUrl(agentId: number): string {
   return `https://api.dicebear.com/9.x/pixel-art/png?seed=agent${agentId}&size=256`;
 }
 
-// Flood-fill transparency from the edges: only near-white pixels connected to
-// the border become transparent, so white *inside* the creature is preserved.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isImage(contentType: string | null, bytes: number): boolean {
+  return !!contentType && contentType.startsWith("image/") && bytes > 2048;
+}
+
+// ── Free generators (tried in order). Each returns raw image bytes or throws. ──
+
+async function fromPollinations(prompt: string, seed: number): Promise<Buffer> {
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=256&height=256&nologo=true&seed=${seed}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(40000) });
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (!res.ok || !isImage(res.headers.get("content-type"), buf.length)) {
+    throw new Error(`pollinations ${res.status} (${buf.length}b)`);
+  }
+  return buf;
+}
+
+async function fromHuggingFace(prompt: string): Promise<Buffer> {
+  const key = process.env.HUGGINGFACE_API_KEY;
+  if (!key) throw new Error("no HF key");
+  const res = await fetch(
+    "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ inputs: prompt }),
+      signal: AbortSignal.timeout(50000),
+    }
+  );
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (!res.ok || !isImage(res.headers.get("content-type"), buf.length)) {
+    throw new Error(`huggingface ${res.status}`);
+  }
+  return buf;
+}
+
+async function fromTogether(prompt: string): Promise<Buffer> {
+  const key = process.env.TOGETHER_API_KEY;
+  if (!key) throw new Error("no Together key");
+  const res = await fetch("https://api.together.xyz/v1/images/generations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "black-forest-labs/FLUX.1-schnell-Free",
+      prompt,
+      width: 256,
+      height: 256,
+      n: 1,
+      response_format: "b64_json",
+    }),
+    signal: AbortSignal.timeout(50000),
+  });
+  if (!res.ok) throw new Error(`together ${res.status}`);
+  const json = (await res.json()) as { data?: { b64_json?: string }[] };
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error("together no image");
+  return Buffer.from(b64, "base64");
+}
+
+// Try every free AI generator before giving up: keyed free-tier providers first
+// (reliable when configured), then no-key Pollinations with seed rotation + backoff.
+async function generateAvatar(strategyType: number, agentId: number): Promise<Buffer | null> {
+  const prompt = buildPrompt(strategyType);
+
+  const keyed: Array<() => Promise<Buffer>> = [];
+  if (process.env.TOGETHER_API_KEY) keyed.push(() => fromTogether(prompt));
+  if (process.env.HUGGINGFACE_API_KEY) keyed.push(() => fromHuggingFace(prompt));
+  for (const gen of keyed) {
+    try { return await gen(); }
+    catch (err) { console.warn(`[avatar] ${agentId} keyed provider failed: ${(err as Error).message}`); }
+  }
+
+  const seeds = [agentId, agentId + 1000, agentId + 2000, agentId + 3000];
+  for (let i = 0; i < seeds.length; i++) {
+    try { return await fromPollinations(prompt, seeds[i]); }
+    catch (err) {
+      console.warn(`[avatar] ${agentId} pollinations seed ${seeds[i]} failed: ${(err as Error).message}`);
+      if (i < seeds.length - 1) await sleep(3000 * (i + 1));
+    }
+  }
+  return null;
+}
+
+// Edge flood-fill: make the background (color sampled from the corners) transparent.
+// Only pixels connected to the border are cleared, so detail inside is preserved.
 export async function removeWhiteBackground(input: Buffer): Promise<Buffer> {
   const { data, info } = await sharp(input)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
-  const isWhite = (i: number) =>
-    data[i] > 232 && data[i + 1] > 232 && data[i + 2] > 232;
+
+  const corners = [
+    0,
+    (width - 1) * channels,
+    (height - 1) * width * channels,
+    ((height - 1) * width + (width - 1)) * channels,
+  ];
+  let br = 0, bg = 0, bb = 0;
+  for (const c of corners) { br += data[c]; bg += data[c + 1]; bb += data[c + 2]; }
+  br /= 4; bg /= 4; bb /= 4;
+  const TOL = 60;
+  const near = (i: number) =>
+    Math.abs(data[i] - br) < TOL && Math.abs(data[i + 1] - bg) < TOL && Math.abs(data[i + 2] - bb) < TOL;
 
   const stack: number[] = [];
   const seen = new Uint8Array(width * height);
-  for (let x = 0; x < width; x++) {
-    stack.push(x, 0, x, height - 1);
-  }
-  for (let y = 0; y < height; y++) {
-    stack.push(0, y, width - 1, y);
-  }
+  for (let x = 0; x < width; x++) stack.push(x, 0, x, height - 1);
+  for (let y = 0; y < height; y++) stack.push(0, y, width - 1, y);
   while (stack.length) {
     const y = stack.pop()!;
     const x = stack.pop()!;
@@ -46,34 +137,30 @@ export async function removeWhiteBackground(input: Buffer): Promise<Buffer> {
     if (seen[p]) continue;
     seen[p] = 1;
     const i = p * channels;
-    if (!isWhite(i)) continue;
+    if (!near(i)) continue;
     data[i + 3] = 0;
     stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
   }
-
   return sharp(data, { raw: { width, height, channels } }).png().toBuffer();
 }
 
-export async function ensureAvatar(
-  agentId: number,
-  strategyType: number
-): Promise<string> {
+export async function ensureAvatar(agentId: number, strategyType: number): Promise<string> {
   const sb = getSupabaseAdmin();
+  const raw = await generateAvatar(strategyType, agentId);
+  if (!raw) {
+    console.error(`[avatar] ${agentId} all AI generators failed — using dicebear`);
+    return dicebearUrl(agentId);
+  }
   try {
-    const prompt = encodeURIComponent(buildPrompt(strategyType));
-    const src = `https://image.pollinations.ai/prompt/${prompt}?width=256&height=256&nologo=true&seed=${agentId}`;
-    const res = await fetch(src, { signal: AbortSignal.timeout(45000) });
-    if (!res.ok) throw new Error(`pollinations ${res.status}`);
-    const raw = Buffer.from(await res.arrayBuffer());
     const png = await removeWhiteBackground(raw);
     const path = `${agentId}.png`;
     const up = await sb.storage
       .from("avatars")
       .upload(path, png, { contentType: "image/png", upsert: true });
     if (up.error) throw up.error;
-    return sb.storage.from("avatars").getPublicUrl(path).data.publicUrl;
+    return `${sb.storage.from("avatars").getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
   } catch (err) {
-    console.error(`[avatar] ${agentId} fallback to dicebear:`, (err as Error).message);
+    console.error(`[avatar] ${agentId} store failed: ${(err as Error).message}`);
     return dicebearUrl(agentId);
   }
 }

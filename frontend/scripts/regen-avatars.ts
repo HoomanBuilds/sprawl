@@ -21,19 +21,10 @@ async function main() {
   console.log(`Regenerating AI avatars for ${targets.length} DiceBear agents (10s spacing)…`);
 
   for (const a of targets) {
-    let ok = false;
-    for (let attempt = 1; attempt <= 2 && !ok; attempt++) {
-      const url = await ensureAvatar(a.agent_id, a.strategy_type);
-      if (!url.includes("dicebear")) {
-        await sb.from("agents").update({ avatar_url: url }).eq("agent_id", a.agent_id);
-        console.log(`✓ #${a.agent_id} ai`);
-        ok = true;
-      } else if (attempt < 2) {
-        await sleep(8000);
-      }
-    }
-    if (!ok) console.log(`· #${a.agent_id} kept dicebear`);
-    await sleep(10000);
+    const url = await ensureAvatar(a.agent_id, a.strategy_type);
+    await sb.from("agents").update({ avatar_url: url }).eq("agent_id", a.agent_id);
+    console.log(`${url.includes("dicebear") ? "·" : "✓"} #${a.agent_id} ${url.includes("dicebear") ? "dicebear" : "ai"}`);
+    await sleep(2000);
   }
   console.log("Done.");
 }
