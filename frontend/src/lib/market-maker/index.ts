@@ -15,7 +15,7 @@ const COINGECKO_API = 'https://api.coingecko.com/api/v3';
 const COINGECKO_IDS: Record<string, string> = {
     sETH: 'ethereum',
     sBTC: 'bitcoin',
-    sPOL: 'matic-network',
+    sPOL: 'polygon-ecosystem-token', // POL (MATIC's old 'matic-network' id is deprecated/empty)
     sSOL: 'solana',
 };
 
