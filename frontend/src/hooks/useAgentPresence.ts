@@ -38,7 +38,7 @@ export function useAgentPresence(): Set<number> {
     refetch();
 
     const channel = supabase
-      .channel("agent-presence")
+      .channel(`agent-presence-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "agents" },
