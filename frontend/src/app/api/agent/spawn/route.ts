@@ -25,6 +25,8 @@ interface SpawnBody {
   presetName?: string;
   customPolicy?: unknown;
   persona?: string;
+  avatarPrompt?: string;
+  avatarSeed?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as SpawnBody;
-    const { name, strategyType, presetName, customPolicy, persona } = body;
+    const { name, strategyType, presetName, customPolicy, persona, avatarPrompt, avatarSeed } = body;
 
     if (!name || name.length < 2 || name.length > 32) {
       return NextResponse.json(
@@ -198,7 +200,10 @@ export async function POST(req: NextRequest) {
     });
 
     // h. Generate the agent avatar (best-effort; falls back to DiceBear).
-    const avatarUrl = await ensureAvatar(tokenId, strategyType as number);
+    const avatarUrl = await ensureAvatar(tokenId, strategyType as number, {
+      prompt: avatarPrompt,
+      seed: avatarSeed,
+    });
     await supabase
       .from("agents")
       .update({ avatar_url: avatarUrl })

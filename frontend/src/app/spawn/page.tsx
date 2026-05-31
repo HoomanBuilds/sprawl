@@ -58,6 +58,11 @@ export default function SpawnPage() {
   const preset = presetKey ? getStrategyPreset(presetKey) : null;
   const [persona, setPersona] = useState("");
 
+  const [avatarPrompt, setAvatarPrompt] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarSeed, setAvatarSeed] = useState<number | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+
   const [status, setStatus] = useState<SpawnStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SpawnResult | null>(null);
@@ -89,10 +94,15 @@ export default function SpawnPage() {
       presetName?: string;
       customPolicy?: AgentPolicy;
       persona?: string;
+      avatarPrompt?: string;
+      avatarSeed?: number;
     } = {
       name: trimmedName,
       strategyType: STRATEGY_TYPE[mode],
     };
+
+    if (avatarSeed != null) body.avatarSeed = avatarSeed;
+    if (avatarPrompt.trim()) body.avatarPrompt = avatarPrompt.trim();
 
     if (mode === "preset" && presetKey) {
       body.presetName = presetKey;
@@ -138,7 +148,28 @@ export default function SpawnPage() {
       clearTimeout(t1);
       clearTimeout(t2);
     }
-  }, [configReady, trimmedName, mode, presetKey, policy, persona]);
+  }, [configReady, trimmedName, mode, presetKey, policy, persona, avatarSeed, avatarPrompt]);
+
+  const regenerateAvatar = useCallback(async () => {
+    setAvatarLoading(true);
+    try {
+      const res = await fetch("/api/agent/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyType: STRATEGY_TYPE[mode],
+          prompt: avatarPrompt.trim() || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.dataUrl) {
+        setAvatarUrl(data.dataUrl);
+        setAvatarSeed(data.seed);
+      }
+    } finally {
+      setAvatarLoading(false);
+    }
+  }, [mode, avatarPrompt]);
 
   const shortAddr = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -295,6 +326,69 @@ export default function SpawnPage() {
                   </p>
                 </div>
               )}
+            </section>
+
+            {/* Step 4: Avatar */}
+            <section>
+              <SectionLabel index={4} title="Avatar (optional)" accent={ACCENT} />
+              <div className="flex items-start gap-4">
+                <div className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
+                  {avatarLoading ? (
+                    <div
+                      className="h-8 w-8 animate-spin rounded-full border-4 border-neutral-800"
+                      style={{ borderTopColor: ACCENT }}
+                    />
+                  ) : avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatarUrl}
+                      alt="Agent avatar preview"
+                      className="h-full w-full object-contain"
+                      style={{ imageRendering: "pixelated" }}
+                    />
+                  ) : (
+                    <span className="px-2 text-center text-xs text-neutral-600">
+                      Auto-generated on spawn
+                    </span>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <input
+                    type="text"
+                    value={avatarPrompt}
+                    onChange={(e) => setAvatarPrompt(e.target.value)}
+                    placeholder="Describe your avatar — e.g. 'a fire dragon trader' (optional)"
+                    maxLength={200}
+                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-3 text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-[var(--accent)]"
+                    style={{ ["--accent" as string]: ACCENT }}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={regenerateAvatar}
+                      disabled={avatarLoading}
+                      className="rounded-lg border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+                      style={{ borderColor: ACCENT, color: ACCENT }}
+                    >
+                      {avatarLoading ? "Generating..." : avatarUrl ? "↻ Regenerate" : "Generate preview"}
+                    </button>
+                    {avatarUrl && (
+                      <button
+                        onClick={() => {
+                          setAvatarUrl(null);
+                          setAvatarSeed(null);
+                        }}
+                        className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+                      >
+                        Use default
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-neutral-600">
+                    Leave blank to auto-generate from the agent&apos;s strategy. Any prompt
+                    is always turned into a pixel-art creature avatar.
+                  </p>
+                </div>
+              </div>
             </section>
 
             {/* Continue */}
