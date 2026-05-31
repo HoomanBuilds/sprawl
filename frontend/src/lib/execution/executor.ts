@@ -175,7 +175,7 @@ async function executeRemoveLiquidity(
 }
 
 const RAID_COST = '5';
-const MAX_RAIDS_PER_DAY = 3;
+const MAX_RAIDS_PER_DAY = 25;
 
 // Autonomous raid: the agent picks a rival, burns 5 SPRAWL, the deployer settles
 // the on-chain raid (scoring + winner), and we record + grant raid XP. The indexer

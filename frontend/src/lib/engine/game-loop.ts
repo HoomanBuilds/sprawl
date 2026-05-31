@@ -60,6 +60,13 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
     const lastValue = agent.last_portfolio_value / 1e18;
     const unrealizedPnl = portfolioValueUSD - lastValue;
 
+    // Surface live (unrealized) P&L to the UI every tick — realized P&L is only
+    // finalized at daily settlement, so without this net_pnl reads 0 all day.
+    await supabaseAdmin
+        .from('agents')
+        .update({ net_pnl: Math.floor(unrealizedPnl * 1e18) })
+        .eq('agent_id', agent.agent_id);
+
     const { data: recentTrades } = await supabaseAdmin
         .from('trade_history')
         .select('*')
@@ -255,6 +262,36 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
         })
         .eq('agent_id', agent.agent_id);
 
+    // 11. PROGRESS — trade XP (raids grant their own XP in the executor) +
+    //     achievement checks, so agents level up + unlock from autonomous play.
+    try {
+        if (finalDecision.action !== 'raid') {
+            await supabaseAdmin.rpc('grant_xp', {
+                p_agent_id: agent.agent_id,
+                p_source: 'trade',
+                p_amount: 5,
+            });
+        }
+        const { checkAchievements } = await import('../achievements');
+        await checkAchievements(
+            agent.agent_id,
+            {
+                total_trades: (agent.recent_actions ?? 0) + 1,
+                protocols_used: agent.strategy_count ?? 0,
+                reputation_score: agent.reputation_score ?? 0,
+                agents_spawned: 0,
+                reputation_given: agent.reputation_given ?? 0,
+                gifts_sent: 0,
+                gifts_received: 0,
+                profit_streak: agent.profit_streak ?? 0,
+                raid_xp: agent.raid_xp ?? 0,
+            },
+            agent.name ?? undefined,
+        );
+    } catch (err) {
+        console.error(`[AgentTick] progress hooks failed: ${(err as Error).message}`);
+    }
+
     console.log(`[AgentTick] Agent ${agent.agent_id} completed in ${Date.now() - startTime}ms: ${finalDecision.action} (${formatUSD(result.realizedPnl)})`);
 }
 
@@ -340,6 +377,29 @@ async function tickLoop(config: EngineConfig): Promise<void> {
             const elapsed = Date.now() - tickStart;
 
             console.log(`[TickLoop] Tick #${tickNumber} complete: ${succeeded} ok, ${failed} failed, ${elapsed}ms`);
+
+            // Raid scheduler — keep wars visible: each tick one LLM agent raids a
+            // rival (rotating). Real on-chain raids → indexer syncs wins/losses +
+            // the UI plays the convergence animation. The executor enforces the
+            // per-day cap + SPRAWL cost, so this can't run away.
+            try {
+                const raiders = (agents as AgentRecord[]).filter((a) => a.strategy_type === 2);
+                if (raiders.length > 0) {
+                    const attacker = raiders[tickNumber % raiders.length];
+                    await executeDecision(
+                        attacker,
+                        {
+                            action: 'raid',
+                            protocol: 'RaidContract',
+                            params: {},
+                            rationale: 'Scanning the skyline for a rival to raid',
+                        } as AgentDecision,
+                        market,
+                    );
+                }
+            } catch (err) {
+                console.error(`[TickLoop] Scheduled raid failed: ${(err as Error).message}`);
+            }
 
             // Run daily settlement check (settles agents whose last_settlement_date != today at midnight UTC)
             try {

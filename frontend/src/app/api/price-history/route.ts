@@ -23,10 +23,11 @@ export async function GET() {
 
   if (trades && trades.length > 0) {
     for (const trade of trades) {
-      const inHuman = parseFloat(formatEther(trade.amount_in));
-      const outHuman = parseFloat(formatEther(trade.amount_out));
-      const price =
-        trade.token_in === 'SPRAWL' ? outHuman / inHuman : inHuman / outHuman;
+      // amount_in/out are wei-scale; the 1e18 cancels in the ratio, so a plain
+      // numeric ratio is both correct and safe (no huge-BigInt / formatEther).
+      const inA = Number(trade.amount_in);
+      const outA = Number(trade.amount_out);
+      const price = trade.token_in === 'SPRAWL' ? outA / inA : inA / outA;
       if (isFinite(price) && price > 0) {
         pricePoints.push({ ts: trade.created_at, price });
       }
