@@ -7,9 +7,10 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import CityScene from "./CityScene";
 import RoamingAgents from "./RoamingAgents";
+import Streetscape from "./Streetscape";
 import type { FocusInfo } from "./CityScene";
 import type { CityBuilding } from "@/types/city";
-import { seededRandom } from "@/lib/city-layout";
+import { seededRandom, generateStreetscape } from "@/lib/city-layout";
 import { usePerfMode } from "@/lib/perfMode";
 import { useAgentPresence } from "@/hooks/useAgentPresence";
 
@@ -507,6 +508,12 @@ export default function CityCanvas({
     [totalCitySprawl]
   );
 
+  // Roads, sidewalks, lamps, trees, cars — deterministic from the block grid.
+  const decorations = useMemo(
+    () => generateStreetscape(buildings.length),
+    [buildings.length]
+  );
+
   const handleSelect = useCallback(
     (id: number) => {
       const b = buildings.find((x) => x.agent_id === id);
@@ -556,6 +563,15 @@ export default function CityCanvas({
       )}
 
       <Ground key={`ground-${theme}`} color={t.groundColor} grid1={t.grid1} grid2={t.grid2} />
+
+      {/* Roads, sidewalks, lamps, trees, cars */}
+      <Streetscape
+        key={`streets-${theme}`}
+        decorations={decorations}
+        groundColor={t.groundColor}
+        sidewalkColor={t.sidewalkColor}
+        roadMarkingColor={t.roadMarkingColor}
+      />
 
       {/* Central monument — height scales with total city $SPRAWL */}
       <SprawlMonument height={monumentHeight} />

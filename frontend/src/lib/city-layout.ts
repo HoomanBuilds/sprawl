@@ -232,3 +232,131 @@ export function generateCityLayout(agents: AgentRecord[]): {
 
   return { buildings };
 }
+
+// ─── Streetscape Generator (roads, sidewalks, lamps, trees, cars) ─────
+// Decorations are deterministic from the block grid, so the client can derive
+// them from the building count alone — no API/page plumbing required. The grid
+// math mirrors generateCityLayout() exactly so everything stays aligned.
+
+const LOT_PITCH_X = LOT_W + ALLEY_W; // 41
+const LOT_PITCH_Z = LOT_D + ALLEY_W; // 35
+const BLOCK_STEP_X = BLOCK_FOOTPRINT_X + STREET_W; // 173 (block + surrounding street)
+const BLOCK_STEP_Z = BLOCK_FOOTPRINT_Z + STREET_W; // 149
+
+export type DecorationType =
+  | "asphalt"
+  | "sidewalk"
+  | "roadMarking"
+  | "streetLamp"
+  | "tree"
+  | "car";
+
+export interface CityDecoration {
+  type: DecorationType;
+  position: [number, number, number];
+  size?: [number, number]; // [worldX, worldZ] for flat planes
+  rotation?: number; // y-rotation (cars)
+  variant?: number;
+}
+
+// Build the full streetscape for a city of `buildingCount` agents. Each block
+// gets an asphalt tile (fills the street gaps), a sidewalk pad (under the
+// lots), corner lamps, trees, a parked car, plus dashed centre lines in any
+// street it shares with an occupied neighbour (ownership dedupes shared roads).
+export function generateStreetscape(buildingCount: number): CityDecoration[] {
+  const out: CityDecoration[] = [];
+  if (buildingCount <= 0) return out;
+
+  const lotsPerBlock = BLOCK_SIZE * BLOCK_SIZE; // 16
+  const totalBlocks = Math.ceil(buildingCount / lotsPerBlock);
+
+  const occupied = new Set<string>();
+  const blocks: { bx: number; bz: number; cx: number; cz: number }[] = [];
+  for (let i = 0; i < totalBlocks; i++) {
+    const [bx, bz] = spiralCoord(i);
+    occupied.add(`${bx},${bz}`);
+    const worldX = bx * BLOCK_STEP_X;
+    const worldZ = bz * BLOCK_STEP_Z;
+    // Block visual centre = midpoint of the 4x4 lot grid (matches placement).
+    const cx = worldX + ((BLOCK_SIZE - 1) / 2) * LOT_PITCH_X;
+    const cz = worldZ + ((BLOCK_SIZE - 1) / 2) * LOT_PITCH_Z;
+    blocks.push({ bx, bz, cx, cz });
+  }
+
+  const hbx = BLOCK_FOOTPRINT_X / 2;
+  const hbz = BLOCK_FOOTPRINT_Z / 2;
+  const DASH = 6;
+  const DASH_GAP = 7;
+
+  // One asphalt slab covering the union of all block tiles + an outer street
+  // margin, so even a single block is framed by a proper road (not a thin ring).
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const { cx, cz } of blocks) {
+    minX = Math.min(minX, cx - BLOCK_STEP_X / 2);
+    maxX = Math.max(maxX, cx + BLOCK_STEP_X / 2);
+    minZ = Math.min(minZ, cz - BLOCK_STEP_Z / 2);
+    maxZ = Math.max(maxZ, cz + BLOCK_STEP_Z / 2);
+  }
+  const margin = STREET_W;
+  out.push({
+    type: "asphalt",
+    position: [(minX + maxX) / 2, 0.02, (minZ + maxZ) / 2],
+    size: [maxX - minX + margin * 2, maxZ - minZ + margin * 2],
+  });
+
+  for (const { bx, bz, cx, cz } of blocks) {
+    // Sidewalk pad sits on top, exactly covering the building lots.
+    out.push({ type: "sidewalk", position: [cx, 0.06, cz], size: [BLOCK_FOOTPRINT_X, BLOCK_FOOTPRINT_Z] });
+
+    // Lamps at the four block corners.
+    for (const sx of [-1, 1] as const) {
+      for (const sz of [-1, 1] as const) {
+        out.push({ type: "streetLamp", position: [cx + sx * hbx, 0, cz + sz * hbz] });
+      }
+    }
+
+    const seed = Math.abs((bx * 73856093) ^ (bz * 19349663)) + 1;
+
+    // Trees along the front/back curb.
+    const treeCount = 2 + Math.floor(seededRandom(seed) * 3);
+    for (let t = 0; t < treeCount; t++) {
+      const along = (seededRandom(seed + t * 17) - 0.5) * BLOCK_FOOTPRINT_X * 0.9;
+      const side = seededRandom(seed + t * 31) < 0.5 ? -1 : 1;
+      out.push({
+        type: "tree",
+        position: [cx + along, 0, cz + side * (hbz + 4)],
+        variant: Math.floor(seededRandom(seed + t * 5) * 3),
+      });
+    }
+
+    // A parked car or two along a side curb.
+    const carCount = 1 + Math.floor(seededRandom(seed + 7) * 2);
+    for (let c = 0; c < carCount; c++) {
+      const along = (seededRandom(seed + c * 53) - 0.5) * BLOCK_FOOTPRINT_Z * 0.8;
+      const side = seededRandom(seed + c * 91) < 0.5 ? -1 : 1;
+      out.push({
+        type: "car",
+        position: [cx + side * (hbx + 4), 0.0, cz + along],
+        rotation: Math.PI / 2,
+        variant: Math.floor(seededRandom(seed + c * 13) * 4),
+      });
+    }
+
+    // Dashed centre lines in shared streets. The block on the -X / -Z side
+    // owns the line so each shared street is drawn exactly once.
+    if (occupied.has(`${bx + 1},${bz}`)) {
+      const mx = cx + BLOCK_STEP_X / 2;
+      for (let z = cz - hbz; z <= cz + hbz; z += DASH + DASH_GAP) {
+        out.push({ type: "roadMarking", position: [mx, 0.08, z], size: [1.4, DASH] });
+      }
+    }
+    if (occupied.has(`${bx},${bz + 1}`)) {
+      const mz = cz + BLOCK_STEP_Z / 2;
+      for (let x = cx - hbx; x <= cx + hbx; x += DASH + DASH_GAP) {
+        out.push({ type: "roadMarking", position: [x, 0.08, mz], size: [DASH, 1.4] });
+      }
+    }
+  }
+
+  return out;
+}
