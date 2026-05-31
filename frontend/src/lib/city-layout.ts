@@ -80,20 +80,32 @@ export function computeBuildingHeight(agent: AgentRecord): number {
   );
 }
 
-// Width: strategy breadth (strategy_count) with deterministic jitter. → 14-38
+// Width: trading volume (primary, grows every swap) + strategy breadth. → 14-40
+// total_volume is a human integer; strategy_count is # of allowed protocols.
+const MAX_VOLUME = 10_000;
 export function computeBuildingWidth(agent: AgentRecord): number {
-  const stratNorm = Math.min(agent.strategy_count / 10, 1);
+  const volNorm = Math.min((Number(agent.total_volume) || 0) / MAX_VOLUME, 1);
+  const stratNorm = Math.min((agent.strategy_count ?? 0) / 10, 1);
+  const score = Math.pow(volNorm, 0.5) * 0.75 + Math.pow(stratNorm, 0.5) * 0.25;
   const jitter = (seededRandom(agent.agent_id * 7919) - 0.5) * 4;
-  return Math.round(14 + Math.pow(stratNorm, 0.5) * 24 + jitter);
+  return Math.round(14 + score * 24 + jitter);
 }
 
-// Depth: activity (recent_actions) + level breadth. → 12-32
-// Reference: Design doc Appendix B.3
+// Depth: sustained activity (recent_actions) + level + raid involvement. → 12-34
+// All three climb as an agent stays busy, so footprints deepen over time.
+const MAX_RECENT_ACTIONS = 20;
+const MAX_RAID_COUNT = 30;
 export function computeBuildingDepth(agent: AgentRecord): number {
-  const strategyNorm = Math.min(agent.strategy_count / 10, 1);
-  const levelNorm = agent.xp_level / 25;
+  const actNorm = Math.min((agent.recent_actions ?? 0) / MAX_RECENT_ACTIONS, 1);
+  const levelNorm = (agent.xp_level ?? 1) / 25;
+  const raidNorm = Math.min(
+    ((agent.raid_wins ?? 0) + (agent.raid_losses ?? 0)) / MAX_RAID_COUNT,
+    1
+  );
   const score =
-    Math.pow(strategyNorm, 0.5) * 0.6 + Math.pow(levelNorm, 0.5) * 0.4;
+    Math.pow(actNorm, 0.5) * 0.45 +
+    Math.pow(levelNorm, 0.5) * 0.35 +
+    Math.pow(raidNorm, 0.5) * 0.2;
   const jitter = seededRandom(agent.agent_id) * 4 - 2; // ±2 deterministic
   return Math.round(12 + score * 20 + jitter);
 }
