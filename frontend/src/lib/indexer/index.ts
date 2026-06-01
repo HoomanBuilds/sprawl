@@ -7,7 +7,8 @@ import RaidContractABI from '@/constants/abi/RaidContract.json';
 import { supabaseAdmin } from '../supabase';
 import { trackDailyMission } from '../dailies';
 
-const CHUNK_SIZE = 1000;
+// Alchemy free tier caps eth_getLogs at a 10-block range; chunk to that limit.
+const CHUNK_SIZE = 10;
 const INDEXER_STATE_KEY = 'main';
 const REALTIME_CHANNEL = 'city-feed';
 
@@ -279,7 +280,9 @@ async function catchUp(
     cityState: Contract, dex: Contract, raid: Contract,
     fromBlock: number, toBlock: number,
 ): Promise<void> {
-    console.log(`[Indexer] Catching up from block ${fromBlock} to ${toBlock}`);
+    if (toBlock - fromBlock >= CHUNK_SIZE) {
+        console.log(`[Indexer] Catching up from block ${fromBlock} to ${toBlock}`);
+    }
 
     for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
         const end = Math.min(start + CHUNK_SIZE - 1, toBlock);
@@ -322,32 +325,19 @@ async function catchUp(
 }
 
 // ---------------------------------------------------------------------------
-// Real-time listener
+// Real-time poll — one consolidated getLogs batch per interval (reuses
+// catchUp). This caps RPC load at ~10 getLogs / interval regardless of block
+// rate, instead of running one polling subscriber per event filter (which on a
+// free-tier RPC trips per-second limits and floods 503s).
 // ---------------------------------------------------------------------------
 
-function attachListeners(cityState: Contract, dex: Contract, raid: Contract): void {
-    cityState.on('AgentSpawned', handleAgentSpawned);
-    cityState.on('AgentDecision', handleAgentDecision);
-    cityState.on('AgentOutcome', handleAgentOutcome);
-    cityState.on('BuildingGrew', handleBuildingGrew);
-    cityState.on('RaidRecorded', handleRaidRecorded);
+const POLL_INTERVAL_MS = 6000;
 
-    dex.on('Swap', (...args: any[]) => {
-        // ethers v6 passes the event as the last arg in live listeners
-        const event = args[args.length - 1];
-        handleSwap(args[0], args[1], args[2], args[3], args[4], args[5], args[6], event);
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+        const t = setTimeout(resolve, ms);
+        signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
     });
-    dex.on('LiquidityAdded', handleLiquidityAdded);
-    dex.on('LiquidityRemoved', handleLiquidityRemoved);
-    dex.on('PoolCreated', handlePoolCreated);
-
-    raid.on('RaidResult', handleRaidResult);
-}
-
-function detachListeners(cityState: Contract, dex: Contract, raid: Contract): void {
-    cityState.removeAllListeners();
-    dex.removeAllListeners();
-    raid.removeAllListeners();
 }
 
 // ---------------------------------------------------------------------------
@@ -363,33 +353,23 @@ export async function startIndexer(signal: AbortSignal): Promise<void> {
     // Subscribe to Realtime channel
     realtimeChannel.subscribe();
     console.log('[Indexer] Realtime broadcast channel active');
-
-    console.log('[Indexer] Starting chain event indexer');
-
-    const lastBlock = await getLastBlock();
-    const latestBlock = await provider.getBlockNumber();
-
-    if (lastBlock < latestBlock) {
-        await catchUp(cityState, dex, raid, lastBlock + 1, latestBlock);
-        await setLastBlock(latestBlock);
-    }
-
-    attachListeners(cityState, dex, raid);
-
-    provider.on('block', async (blockNumber: number) => {
-        await setLastBlock(blockNumber);
-    });
-
-    console.log('[Indexer] Listening for CityState + SprawlDEX + RaidContract events');
+    console.log('[Indexer] Starting chain event indexer (consolidated poll)');
 
     signal.addEventListener('abort', () => {
         console.log('[Indexer] Shutting down');
-        detachListeners(cityState, dex, raid);
-        provider.removeAllListeners();
         realtimeChannel.unsubscribe();
     }, { once: true });
 
-    await new Promise<void>((resolve) => {
-        signal.addEventListener('abort', () => resolve(), { once: true });
-    });
+    while (!signal.aborted) {
+        try {
+            const from = (await getLastBlock()) + 1;
+            const tip = await provider.getBlockNumber();
+            if (tip >= from) {
+                await catchUp(cityState, dex, raid, from, tip);
+            }
+        } catch (err) {
+            console.error(`[Indexer] Poll cycle failed: ${(err as Error).message}`);
+        }
+        await sleep(POLL_INTERVAL_MS, signal);
+    }
 }
