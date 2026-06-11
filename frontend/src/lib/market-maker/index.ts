@@ -1,6 +1,6 @@
 import { Contract, formatEther, parseEther, MaxUint256 } from 'ethers';
 import { getMantleSepoliaProvider, getDeployerWallet } from '../ethers-provider';
-import { CONTRACTS, TOKEN_SYMBOLS } from '../config';
+import { CONTRACTS } from '../config';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import SprawlTokenABI from '@/constants/abi/SprawlToken.json';
 import { withTxLock } from '../execution/tx-lock';
@@ -8,7 +8,15 @@ import { supabaseAdmin } from '../supabase';
 import type { CoinGeckoPrice } from '@/types/market';
 
 // ---------------------------------------------------------------------------
-// CoinGecko price feed
+// IMPORTANT: The Sprawl DEX is a self-contained FREE MARKET. Prices move only
+// from agent + noise swaps along the constant-product curve, and are NOT pegged
+// back to real-world (CoinGecko) prices. If agent trading pushes sETH above or
+// below the real ETH price, that's intentional — the in-sim market is its own
+// economy. (Previously a peg arb bot dragged prices back to CoinGecko each
+// cycle, which fought the agents' trades and caused the price chaos.)
+//
+// CoinGecko is kept ONLY so the one-off seed script (scripts/rebalance-pools.ts)
+// can set realistic STARTING prices once. It is never called from the live loop.
 // ---------------------------------------------------------------------------
 
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
@@ -22,7 +30,6 @@ const COINGECKO_IDS: Record<string, string> = {
 let priceCache: Record<string, CoinGeckoPrice> = {};
 let lastFetch = 0;
 const CACHE_TTL_MS = 30_000;
-const STALE_THRESHOLD_MS = 5 * 60_000;
 
 export async function fetchRealPrices(): Promise<Record<string, CoinGeckoPrice>> {
     const now = Date.now();
@@ -75,38 +82,12 @@ export async function fetchRealPrices(): Promise<Record<string, CoinGeckoPrice>>
     }
 }
 
-function isPriceStale(): boolean {
-    return lastFetch > 0 && Date.now() - lastFetch > STALE_THRESHOLD_MS;
-}
-
 // ---------------------------------------------------------------------------
-// Arb detection + execution
+// DEX price helper + $SPRAWL price snapshot (for the price chart)
 // ---------------------------------------------------------------------------
 
-const ARB_THRESHOLD_PCT = 0.5;
 const NOISE_MIN_PCT = 0.001;
 const NOISE_MAX_PCT = 0.003;
-
-const TOKEN_ADDRESSES: Record<string, string> = {
-    sETH: CONTRACTS.sETH,
-    sBTC: CONTRACTS.sBTC,
-    sPOL: CONTRACTS.sPOL,
-    sSOL: CONTRACTS.sSOL,
-    SPRAWL: CONTRACTS.SPRAWL,
-};
-
-const ADDRESS_TO_SYMBOL: Record<string, string> = {};
-for (const [sym, addr] of Object.entries(TOKEN_ADDRESSES)) {
-    ADDRESS_TO_SYMBOL[addr.toLowerCase()] = sym;
-}
-
-interface ArbOpportunity {
-    token: string;
-    dexPrice: number;
-    realPrice: number;
-    spreadPct: number;
-    direction: 'buy' | 'sell';
-}
 
 async function getDexPrice(dex: Contract, tokenAddress: string): Promise<number> {
     const priceRaw = await dex.getPrice(tokenAddress, CONTRACTS.sUSDC);
@@ -128,92 +109,10 @@ async function recordSprawlSnapshot(): Promise<void> {
     }
 }
 
-async function findArbOpportunities(): Promise<ArbOpportunity[]> {
-    const provider = getMantleSepoliaProvider();
-    const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, provider);
-    const realPrices = await fetchRealPrices();
-
-    const opportunities: ArbOpportunity[] = [];
-
-    for (const [symbol, address] of Object.entries(TOKEN_ADDRESSES)) {
-        if (symbol === 'SPRAWL') continue;
-
-        const realPrice = realPrices[symbol]?.usd;
-        if (!realPrice) continue;
-
-        try {
-            const dexPrice = await getDexPrice(dex, address);
-            const spreadPct = ((dexPrice - realPrice) / realPrice) * 100;
-
-            if (Math.abs(spreadPct) > ARB_THRESHOLD_PCT) {
-                opportunities.push({
-                    token: symbol,
-                    dexPrice,
-                    realPrice,
-                    spreadPct,
-                    direction: spreadPct > 0 ? 'sell' : 'buy',
-                });
-            }
-        } catch (err: any) {
-            console.error(`[ArbBot] Failed to get DEX price for ${symbol}: ${err.message}`);
-        }
-    }
-
-    return opportunities.sort((a, b) => Math.abs(b.spreadPct) - Math.abs(a.spreadPct));
-}
-
-// Size a corrective swap to drag the pool price all the way to the real price
-// (constant-product peg). As the peg-keeper, the bot intentionally moves the
-// price, so minOut = 0 — slippage protection would defeat the purpose.
-async function executeArb(opp: ArbOpportunity): Promise<string | null> {
-    return withTxLock(async () => {
-        const wallet = getDeployerWallet();
-        const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, wallet);
-
-        const tokenAddress = TOKEN_ADDRESSES[opp.token];
-        const usdcAddress = CONTRACTS.sUSDC;
-
-        // Read live reserves to compute the exact peg swap.
-        const poolId = await dex.getPoolId(tokenAddress, usdcAddress);
-        const pi = await dex.getPoolInfo(poolId);
-        const tokenIsA = pi.tokenA.toLowerCase() === tokenAddress.toLowerCase();
-        const reserveToken = parseFloat(formatEther(tokenIsA ? pi.reserveA : pi.reserveB));
-        const reserveUSDC = parseFloat(formatEther(tokenIsA ? pi.reserveB : pi.reserveA));
-        const feeRate = Number(pi.feeNumerator) / Number(pi.feeDenominator);
-
-        const k = reserveToken * reserveUSDC;
-        const targetUSDC = Math.sqrt(k * opp.realPrice);
-        const targetToken = Math.sqrt(k / opp.realPrice);
-
-        // buy = price too low → swap USDC in; sell = price too high → swap token in.
-        const inAddr = opp.direction === 'buy' ? usdcAddress : tokenAddress;
-        const outAddr = opp.direction === 'buy' ? tokenAddress : usdcAddress;
-        let amountInHuman =
-            opp.direction === 'buy'
-                ? (targetUSDC - reserveUSDC) / (1 - feeRate)
-                : (targetToken - reserveToken) / (1 - feeRate);
-        if (amountInHuman <= 0) return null;
-
-        // Cap to what the deployer actually holds.
-        const inToken = new Contract(inAddr, SprawlTokenABI.abi, wallet);
-        const balance = parseFloat(formatEther(await inToken.balanceOf(wallet.address)));
-        amountInHuman = Math.min(amountInHuman, balance * 0.95);
-        if (amountInHuman <= 0) return null;
-
-        const amountIn = parseEther(amountInHuman.toFixed(18));
-        const allowance: bigint = await inToken.allowance(wallet.address, CONTRACTS.SprawlDEX);
-        if (allowance < amountIn) {
-            await (await inToken.approve(CONTRACTS.SprawlDEX, MaxUint256)).wait();
-        }
-
-        const tx = await dex.swap(inAddr, outAddr, amountIn, 0n);
-        const receipt = await tx.wait();
-        return receipt.hash;
-    });
-}
-
 // ---------------------------------------------------------------------------
-// Noise trades — organic volume for all pools including $SPRAWL
+// Noise trades — gentle organic background volume so pools stay lively between
+// agent ticks. Balanced random buy/sell (~0.1-0.3% of reserves), i.e. a small
+// random walk that simulates other market participants. NOT a peg.
 // ---------------------------------------------------------------------------
 
 async function executeNoiseTrades(): Promise<void> {
@@ -228,18 +127,26 @@ async function executeNoiseTrades(): Promise<void> {
         ['SPRAWL', 'sUSDC'],
     ];
 
-    for (const [tokenA, tokenB] of pools) {
+    for (const [tokenSym, usdcSym] of pools) {
         try {
-            const addressA = CONTRACTS[tokenA as keyof typeof CONTRACTS];
-            const addressB = CONTRACTS[tokenB as keyof typeof CONTRACTS];
+            const tokenAddr = CONTRACTS[tokenSym as keyof typeof CONTRACTS];
+            const usdcAddr = CONTRACTS[usdcSym as keyof typeof CONTRACTS];
 
-            const poolId = await dex.getPoolId(addressA, addressB);
+            const poolId = await dex.getPoolId(tokenAddr, usdcAddr);
             const poolInfo = await dex.getPoolInfo(poolId);
-            const reserveB = parseFloat(formatEther(poolInfo.reserveB));
+
+            // Pools store tokenA/tokenB sorted by address — resolve which reserve
+            // is the token and which is sUSDC instead of assuming an order. (The
+            // old code assumed tokenA=token; for pools where sUSDC sorts first it
+            // sold a USDC-sized amount of the TOKEN and cratered the pool.)
+            const tokenIsA = poolInfo.tokenA.toLowerCase() === tokenAddr.toLowerCase();
+            const reserveToken = parseFloat(formatEther(tokenIsA ? poolInfo.reserveA : poolInfo.reserveB));
+            const reserveUSDC = parseFloat(formatEther(tokenIsA ? poolInfo.reserveB : poolInfo.reserveA));
+            if (reserveToken <= 0 || reserveUSDC <= 0) continue;
 
             const noisePct = NOISE_MIN_PCT + Math.random() * (NOISE_MAX_PCT - NOISE_MIN_PCT);
-            const noiseAmount = reserveB * noisePct;
-            if (noiseAmount < 0.01) continue;
+            const usdValue = reserveUSDC * noisePct; // dollar size; ~noisePct price impact
+            if (usdValue < 0.01) continue;
 
             const direction = Math.random() > 0.5 ? 'buy' : 'sell';
 
@@ -248,69 +155,40 @@ async function executeNoiseTrades(): Promise<void> {
                 const dexSigned = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, wallet);
 
                 if (direction === 'buy') {
-                    const amountIn = parseEther(noiseAmount.toFixed(18));
-                    const usdcToken = new Contract(addressB, SprawlTokenABI.abi, wallet);
+                    // sUSDC -> token, sized at noisePct of the USDC reserve
+                    const amountIn = parseEther(usdValue.toFixed(18));
+                    const usdcToken = new Contract(usdcAddr, SprawlTokenABI.abi, wallet);
                     const allowance: bigint = await usdcToken.allowance(wallet.address, CONTRACTS.SprawlDEX);
                     if (allowance < amountIn) {
-                        const tx = await usdcToken.approve(CONTRACTS.SprawlDEX, MaxUint256);
-                        await tx.wait();
+                        await (await usdcToken.approve(CONTRACTS.SprawlDEX, MaxUint256)).wait();
                     }
-                    const tx = await dexSigned.swap(addressB, addressA, amountIn, 0n);
-                    await tx.wait();
+                    await (await dexSigned.swap(usdcAddr, tokenAddr, amountIn, 0n)).wait();
                 } else {
-                    const reserveA = parseFloat(formatEther(poolInfo.reserveA));
-                    const noiseAmountA = reserveA * noisePct;
-                    const amountIn = parseEther(noiseAmountA.toFixed(18));
-                    const tokenContract = new Contract(addressA, SprawlTokenABI.abi, wallet);
+                    // token -> sUSDC, sized at noisePct of the TOKEN reserve
+                    const tokenAmount = reserveToken * noisePct;
+                    const amountIn = parseEther(tokenAmount.toFixed(18));
+                    const tokenContract = new Contract(tokenAddr, SprawlTokenABI.abi, wallet);
                     const allowance: bigint = await tokenContract.allowance(wallet.address, CONTRACTS.SprawlDEX);
                     if (allowance < amountIn) {
-                        const tx = await tokenContract.approve(CONTRACTS.SprawlDEX, MaxUint256);
-                        await tx.wait();
+                        await (await tokenContract.approve(CONTRACTS.SprawlDEX, MaxUint256)).wait();
                     }
-                    const tx = await dexSigned.swap(addressA, addressB, amountIn, 0n);
-                    await tx.wait();
+                    await (await dexSigned.swap(tokenAddr, usdcAddr, amountIn, 0n)).wait();
                 }
 
-                console.log(`[Noise] ${direction} ${tokenA}/${tokenB} (~$${noiseAmount.toFixed(2)})`);
+                console.log(`[Noise] ${direction} ${tokenSym}/${usdcSym} (~$${usdValue.toFixed(2)})`);
             });
         } catch (err: any) {
-            console.error(`[Noise] Failed for ${tokenA}/${tokenB}: ${err.message}`);
+            console.error(`[Noise] Failed for ${tokenSym}/${usdcSym}: ${err.message}`);
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Arb cycle — called every 30s
+// Market cycle — called every 30s. Free market: NO peg. Just gentle background
+// volume + a $SPRAWL price snapshot. Prices float purely on agent + noise swaps.
 // ---------------------------------------------------------------------------
 
 export async function runArbCycle(): Promise<void> {
-    const stale = isPriceStale();
-
-    if (!stale) {
-        const opportunities = await findArbOpportunities();
-
-        if (opportunities.length > 0) {
-            console.log(`[ArbBot] Found ${opportunities.length} arb opportunities`);
-
-            for (const opp of opportunities.slice(0, 3)) {
-                console.log(
-                    `[ArbBot] ${opp.direction} ${opp.token}: DEX=$${opp.dexPrice.toFixed(2)}, Real=$${opp.realPrice.toFixed(2)}, Spread=${opp.spreadPct.toFixed(2)}%`
-                );
-
-                try {
-                    const txHash = await executeArb(opp);
-                    if (txHash) {
-                        console.log(`[ArbBot] Arb executed: ${txHash}`);
-                    }
-                } catch (err: any) {
-                    console.error(`[ArbBot] Arb failed for ${opp.token}: ${err.message}`);
-                }
-            }
-        }
-    } else {
-        console.warn('[ArbBot] Prices stale >5m, skipping arb (noise only)');
-    }
-
     try {
         await executeNoiseTrades();
     } catch (err: any) {
@@ -326,7 +204,7 @@ export async function runArbCycle(): Promise<void> {
 
 export async function marketMakerLoop(signal: AbortSignal): Promise<void> {
     const INTERVAL_MS = 30_000;
-    console.log('[ArbBot] Starting market maker loop (30s interval)');
+    console.log('[ArbBot] Starting market maker loop (free market, no peg, 30s interval)');
 
     while (!signal.aborted) {
         try {
