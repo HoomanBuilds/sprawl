@@ -137,17 +137,10 @@ async function handleAgentDecision(agentId: bigint, action: string, protocol: st
 async function handleAgentOutcome(agentId: bigint, pnlDelta: bigint, newVolume: bigint, newLevel: bigint): Promise<void> {
     console.log(`[Indexer] AgentOutcome: ${agentId} volume=${newVolume} level=${newLevel}`);
     try {
-        // net_pnl is owned by the engine tick (unrealized P&L since baseline, in
-        // wei). Do NOT write it here — pnlDelta is raw on-chain wei with different
-        // semantics and would corrupt wealth/tint. Volume + level are chain-authoritative.
-        await supabaseAdmin
-            .from('agents')
-            .update({
-                total_volume: newVolume.toString(),
-                xp_level: Number(newLevel),
-            })
-            .eq('agent_id', Number(agentId));
-
+        // Feed/broadcast ONLY. Every agents-table field has exactly one owner:
+        // net_pnl = engine tick, total_volume = per-swap increment_volume,
+        // xp_level = grant_xp. CityState's on-chain ledger uses different
+        // units/semantics — writing it here clobbered the live DB values.
         await writeFeedAndBroadcast('outcome', Number(agentId), null, {
             pnlDelta: formatEther(pnlDelta),
             volume: formatEther(newVolume),
