@@ -73,6 +73,25 @@ function symbolFromAddress(addr: string): string {
     return TOKEN_SYMBOLS[addr] ?? addr.slice(0, 10);
 }
 
+// Nudge reputation_score by delta, clamped 0-100 (raid outcomes move rep).
+async function adjustReputation(agentId: number, delta: number): Promise<void> {
+    try {
+        const { data } = await supabaseAdmin
+            .from('agents')
+            .select('reputation_score')
+            .eq('agent_id', agentId)
+            .single();
+        if (!data) return;
+        const next = Math.max(0, Math.min(100, Number(data.reputation_score ?? 0) + delta));
+        await supabaseAdmin
+            .from('agents')
+            .update({ reputation_score: next })
+            .eq('agent_id', agentId);
+    } catch (err) {
+        console.error(`[Indexer] adjustReputation(${agentId}) failed: ${(err as Error).message}`);
+    }
+}
+
 async function findAgentByWallet(walletAddress: string): Promise<number | null> {
     const { data } = await supabaseAdmin
         .from('agents')
@@ -162,6 +181,12 @@ async function handleRaidRecorded(attackerId: bigint, defenderId: bigint, attack
         await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(attackerId), p_field: 'raid_losses' });
         await supabaseAdmin.rpc('increment_field', { p_agent_id: Number(defenderId), p_field: 'raid_wins' });
     }
+
+    // Reputation moves with raid outcomes: winner +2, loser -1 (clamped 0-100).
+    const winnerId = attackerWon ? Number(attackerId) : Number(defenderId);
+    const loserId = attackerWon ? Number(defenderId) : Number(attackerId);
+    await adjustReputation(winnerId, 2);
+    await adjustReputation(loserId, -1);
 
     await writeFeedAndBroadcast('raid', Number(attackerId), Number(defenderId), { attackerWon });
 }

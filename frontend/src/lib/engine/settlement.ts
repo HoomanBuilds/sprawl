@@ -11,6 +11,16 @@ const SPRAWL_REWARD_PCT = 10;
 const MIN_PROFIT_FOR_REWARD = 5;
 const MAX_DAILY_SPRAWL = 500;
 
+// Reputation drifts with performance: profitable settlement periods raise it,
+// losing ones lower it (clamped 0-100). Raids also move it (see indexer).
+// |pnl| below MIN_PROFIT_FOR_REWARD is treated as noise and leaves rep alone.
+export function reputationDrift(currentRep: number, pnl: number): number {
+  let delta = 0;
+  if (pnl > MIN_PROFIT_FOR_REWARD) delta = 1;
+  else if (pnl < -MIN_PROFIT_FOR_REWARD) delta = -1;
+  return Math.max(0, Math.min(100, Number(currentRep ?? 0) + delta));
+}
+
 export async function settleDaily(agent: AgentRecord): Promise<void> {
   const market = await readMarketContext();
   const portfolio = await readPortfolio(agent.wallet_address);
@@ -71,6 +81,7 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
       sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
       sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
       profit_streak: profitStreak,
+      reputation_score: reputationDrift(agent.reputation_score, dailyPnl),
       xp_daily: 0,
       xp_daily_date: today,
       recent_actions: 0,
@@ -159,6 +170,7 @@ async function rollingSettle(agent: AgentRecord): Promise<void> {
       sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
       sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
       profit_streak: profitStreak,
+      reputation_score: reputationDrift(agent.reputation_score, pnl),
     })
     .eq('agent_id', agent.agent_id);
 
