@@ -165,7 +165,7 @@ export default function MiniMap({
   if (buildings.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 select-none">
+    <div className="fixed bottom-14 right-4 z-40 select-none">
       <canvas
         ref={canvasRef}
         width={SIZE}

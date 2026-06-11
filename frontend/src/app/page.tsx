@@ -138,13 +138,13 @@ function CityPage() {
         <SprawlPriceSparkline />
       </div>
 
-      {/* Wallet connect (RainbowKit) */}
-      <div className="fixed left-4 bottom-4 z-50">
+      {/* Wallet connect (RainbowKit) — raised above the activity ticker */}
+      <div className="fixed left-4 bottom-14 z-50">
         <ConnectButton />
       </div>
 
-      {/* Page nav — bottom-right (free corner) */}
-      <nav className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
+      {/* Page nav — bottom-center, above the ticker, clear of the minimap */}
+      <nav className="fixed bottom-14 left-1/2 z-50 flex -translate-x-1/2 flex-row items-center gap-2">
         <Link
           href="/spawn"
           className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-bg)] border-2 border-[color:var(--color-sprawl-accent)] bg-[color:var(--color-sprawl-accent)] px-3 py-1.5 transition-none hover:opacity-80"
