@@ -15,7 +15,18 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
   const market = await readMarketContext();
   const portfolio = await readPortfolio(agent.wallet_address);
   const currentValue = calculatePortfolioValue(portfolio, market.prices);
-  const lastValue = agent.last_portfolio_value / 1e18;
+  // NUMERIC columns come back from supabase-js as strings — Number() everywhere.
+  const lastValue = Number(agent.last_portfolio_value) / 1e18;
+  // No baseline yet: adopt the current value rather than banking the starting
+  // balance as profit.
+  if (Number(agent.last_portfolio_value) <= 0) {
+    const supabase = getSupabaseAdmin();
+    await supabase
+      .from('agents')
+      .update({ last_portfolio_value: Math.floor(currentValue * 1e18), net_pnl: 0 })
+      .eq('agent_id', agent.agent_id);
+    return;
+  }
   const dailyPnl = currentValue - lastValue;
 
   let sprawlReward = 0;
@@ -54,9 +65,11 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
     .update({
       last_portfolio_value: Math.floor(currentValue * 1e18),
       last_settlement_date: today,
-      net_pnl: Math.floor((agent.net_pnl / 1e18 + dailyPnl) * 1e18),
-      sprawl_balance: agent.sprawl_balance + sprawlReward * 1e18,
-      sprawl_lifetime_earned: agent.sprawl_lifetime_earned + sprawlReward * 1e18,
+      // Baseline just rebased to currentValue, so unrealized P&L resets to 0;
+      // this keeps the invariant (last_portfolio_value + net_pnl == wealth).
+      net_pnl: 0,
+      sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
+      sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
       profit_streak: profitStreak,
       xp_daily: 0,
       xp_daily_date: today,
@@ -111,6 +124,18 @@ async function rollingSettle(agent: AgentRecord): Promise<void> {
   const portfolio = await readPortfolio(agent.wallet_address);
   const currentValue = calculatePortfolioValue(portfolio, market.prices);
   const lastValue = Number(agent.last_portfolio_value) / 1e18;
+  const supabase = getSupabaseAdmin();
+
+  // No baseline yet: adopt the current value rather than banking the starting
+  // balance as phantom profit.
+  if (Number(agent.last_portfolio_value) <= 0) {
+    await supabase
+      .from('agents')
+      .update({ last_portfolio_value: Math.floor(currentValue * 1e18), net_pnl: 0 })
+      .eq('agent_id', agent.agent_id);
+    return;
+  }
+
   const pnl = currentValue - lastValue;
 
   let sprawlReward = 0;
@@ -121,15 +146,16 @@ async function rollingSettle(agent: AgentRecord): Promise<void> {
     );
   }
 
-  const supabase = getSupabaseAdmin();
   const profitStreak = pnl > 0 ? agent.profit_streak + 1 : 0;
 
-  // Reset the baseline (bank the period) but leave net_pnl to the live tick
-  // writer, which now reads "unrealized P&L since this fresh baseline".
+  // Rebase the baseline to currentValue (bank the period) and reset net_pnl to
+  // 0 in the same write, so wealth = last_portfolio_value + net_pnl stays exact
+  // at every instant instead of flickering until the next tick rewrites net_pnl.
   await supabase
     .from('agents')
     .update({
       last_portfolio_value: Math.floor(currentValue * 1e18),
+      net_pnl: 0,
       sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
       sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
       profit_streak: profitStreak,
