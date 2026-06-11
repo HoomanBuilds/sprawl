@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import type { CityBuilding } from "@/types/city";
 import DecisionFeed from "@/components/DecisionFeed";
@@ -42,21 +43,25 @@ function CityPage() {
   const [theme, setTheme] = useState(0);
 
   const liveAgentIds = useAgentPresence();
+  const searchParams = useSearchParams();
+
+  const applyCity = useCallback((list: CityBuilding[]) => {
+    setBuildings(list);
+    setTotalSprawl(
+      list.reduce((sum, b) => sum + Number(b.sprawl_lifetime_earned ?? 0), 0)
+    );
+  }, []);
 
   const fetchCity = useCallback(async () => {
     try {
       setError(null);
       setStage("fetching");
-      const res = await fetch("/api/city");
+      const res = await fetch("/api/city", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       setStage("generating");
       const data = await res.json();
-      const list: CityBuilding[] = data.buildings ?? [];
-      setBuildings(list);
-      setTotalSprawl(
-        list.reduce((sum, b) => sum + Number(b.sprawl_lifetime_earned ?? 0), 0)
-      );
+      applyCity(data.buildings ?? []);
 
       setStage("rendering");
       setTimeout(() => {
@@ -67,11 +72,38 @@ function CityPage() {
       setError(e instanceof Error ? e.message : "Unknown error");
       setStage("error");
     }
-  }, []);
+  }, [applyCity]);
+
+  // Live refresh: re-pull building data so wealth-driven sizes (and new agents)
+  // update without a manual reload. Does NOT replay the intro flyover/stages.
+  const refreshCity = useCallback(async () => {
+    try {
+      const res = await fetch("/api/city", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      applyCity(data.buildings ?? []);
+    } catch {
+      // transient RPC/network blip — keep the last good frame
+    }
+  }, [applyCity]);
 
   useEffect(() => {
     fetchCity();
   }, [fetchCity]);
+
+  useEffect(() => {
+    const id = setInterval(refreshCity, 20_000);
+    return () => clearInterval(id);
+  }, [refreshCity]);
+
+  // Deep-link: /?agent=N focuses that building (e.g. right after spawning one).
+  useEffect(() => {
+    const a = searchParams.get("agent");
+    if (a) {
+      const id = Number(a);
+      if (Number.isFinite(id)) setSelectedAgentId(id);
+    }
+  }, [searchParams]);
 
   const handleBuildingClick = useCallback((building: CityBuilding) => {
     setSelectedAgentId(building.agent_id);
@@ -114,6 +146,12 @@ function CityPage() {
       {/* Page nav — bottom-right (free corner) */}
       <nav className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2">
         <Link
+          href="/spawn"
+          className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-bg)] border-2 border-[color:var(--color-sprawl-accent)] bg-[color:var(--color-sprawl-accent)] px-3 py-1.5 transition-none hover:opacity-80"
+        >
+          + Spawn Agent
+        </Link>
+        <Link
           href="/leaderboard"
           className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border-2 border-[color:var(--color-sprawl-accent)] bg-[rgba(13,13,15,0.7)] px-3 py-1.5 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
         >
@@ -149,5 +187,9 @@ function CityPage() {
 }
 
 export default function Home() {
-  return <CityPage />;
+  return (
+    <Suspense fallback={null}>
+      <CityPage />
+    </Suspense>
+  );
 }

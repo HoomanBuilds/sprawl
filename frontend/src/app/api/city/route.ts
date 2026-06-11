@@ -42,8 +42,10 @@ export async function GET() {
         : 0,
   };
 
+  // No caching: building sizes track live wealth, so the client must always see
+  // the latest engine tick (the page polls this every 20s).
   const headers = {
-    "Cache-Control": "s-maxage=30, stale-while-revalidate=300",
+    "Cache-Control": "no-store",
   };
 
   if (agents.length === 0) {

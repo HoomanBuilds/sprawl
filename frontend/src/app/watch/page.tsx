@@ -16,7 +16,7 @@ export default function WatchPage() {
 
   const fetchCity = useCallback(async () => {
     try {
-      const res = await fetch('/api/city');
+      const res = await fetch('/api/city', { cache: 'no-store' });
       const data = await res.json();
       const list: CityBuilding[] = data.buildings ?? [];
       setBuildings(list);
@@ -25,6 +25,9 @@ export default function WatchPage() {
 
   useEffect(() => {
     fetchCity();
+    // Live refresh so wealth-driven building sizes track the engine.
+    const id = setInterval(fetchCity, 20_000);
+    return () => clearInterval(id);
   }, [fetchCity]);
 
   useEffect(() => {
