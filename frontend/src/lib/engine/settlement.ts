@@ -1,8 +1,8 @@
-import { Contract, parseEther } from 'ethers';
+import { Contract, parseEther, ZeroHash } from 'ethers';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { readPortfolio, calculatePortfolioValue, readMarketContext } from './market-reader';
-import { getDeployerWallet } from '@/lib/ethers-provider';
-import { CONTRACTS } from '@/lib/config';
+import { getDeployerWallet, getRefereeWallet } from '@/lib/ethers-provider';
+import { CONTRACTS, ERC8004 } from '@/lib/config';
 import CityRefereeABI from '@/constants/abi/CityReferee.json';
 import { addMemory } from '@/lib/memory/memory-stream';
 import type { AgentRecord } from '@/types/agent';
@@ -19,6 +19,27 @@ export function reputationDrift(currentRep: number, pnl: number): number {
   if (pnl > MIN_PROFIT_FOR_REWARD) delta = 1;
   else if (pnl < -MIN_PROFIT_FOR_REWARD) delta = -1;
   return Math.max(0, Math.min(100, Number(currentRep ?? 0) + delta));
+}
+
+// Canonical ERC-8004 ReputationRegistry, Jan 2026 interface (no feedbackAuth).
+const REPUTATION_REGISTRY_ABI = [
+  'function giveFeedback(uint256 agentId, int128 value, uint8 valueDecimals, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)',
+];
+
+// Post the day's P&L (whole dollars, clamped to ±100000) as on-chain feedback
+// under tag "daily-pnl". Best-effort: skipped when no referee key is set.
+export async function pushErc8004Feedback(agentId: number, pnl: number): Promise<void> {
+  const referee = getRefereeWallet();
+  if (!referee) return;
+  try {
+    const registry = new Contract(ERC8004.ReputationRegistry, REPUTATION_REGISTRY_ABI, referee);
+    const score = Math.max(-100_000, Math.min(100_000, Math.round(pnl)));
+    const tx = await registry.giveFeedback(agentId, score, 0, 'daily-pnl', 'sprawl', '', '', ZeroHash);
+    await tx.wait();
+    console.log(`[Settlement] ERC-8004 feedback: agent ${agentId} daily P&L ${score} → ReputationRegistry`);
+  } catch (err) {
+    console.error(`[Settlement] ERC-8004 feedback failed for agent ${agentId}: ${(err as Error).message}`);
+  }
 }
 
 export async function settleDaily(agent: AgentRecord): Promise<void> {
@@ -65,6 +86,13 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
     );
     sprawlReward = 0;
   }
+
+  // Push the daily P&L to the canonical ERC-8004 ReputationRegistry as
+  // feedback (best-effort). Sent by the referee wallet, NOT the deployer —
+  // the registry rejects feedback from an agent's own ERC-8004 owner.
+  // (CityReferee.recordOutcome is unusable: it was compiled against the
+  // pre-Jan-2026 9-arg giveFeedback and reverts against the live registry.)
+  await pushErc8004Feedback(agent.agent_id, dailyPnl);
 
   const supabase = getSupabaseAdmin();
   const today = new Date().toISOString().split('T')[0];

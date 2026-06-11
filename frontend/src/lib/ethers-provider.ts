@@ -73,3 +73,13 @@ export function getDeployerWallet(): Wallet {
   if (!key) throw new Error("BACKEND_PRIVATE_KEY not set");
   return new Wallet(key, getMantleSepoliaProvider());
 }
+
+// Dedicated wallet for ERC-8004 reputation feedback. Must be DISTINCT from the
+// deployer: the canonical ReputationRegistry rejects feedback from the agent's
+// own ERC-8004 owner ("Self-feedback not allowed"), and the deployer owns all
+// agent identity tokens. Returns null when unconfigured (feedback is optional).
+export function getRefereeWallet(): Wallet | null {
+  const key = process.env.REFEREE_PRIVATE_KEY;
+  if (!key) return null;
+  return new Wallet(key, getMantleSepoliaProvider());
+}
