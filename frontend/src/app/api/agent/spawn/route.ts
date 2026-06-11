@@ -4,6 +4,7 @@ import { getAuthenticatedAddress } from "@/lib/auth";
 import { validatePolicy } from "@/lib/policy-schema";
 import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
 import { getMantleSepoliaProvider, getDeployerWallet } from "@/lib/ethers-provider";
+import { readMarketContext, readPortfolio, calculatePortfolioValue } from "@/lib/engine/market-reader";
 import { CONTRACTS, ERC8004 } from "@/lib/config";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { storeAgentWallet } from "@/lib/execution/wallet-manager";
@@ -146,6 +147,7 @@ export async function POST(req: NextRequest) {
       strategy_type: strategyType,
       policy_config: policy,
       strategy_count: policy.rules.length,
+      net_pnl: 0,
     });
 
     if (insertError) {
@@ -199,19 +201,36 @@ export async function POST(req: NextRequest) {
       metadata: { name, strategyType },
     });
 
-    // h. Generate the agent avatar (best-effort; falls back to DiceBear).
-    const avatarUrl = await ensureAvatar(tokenId, strategyType as number, {
+    // h. Initialize the P&L baseline to the actual funded portfolio value, so
+    //    the building sizes to real wealth from the first frame and the first
+    //    settlement doesn't bank the starting balance as fabricated profit.
+    try {
+      const market = await readMarketContext();
+      const portfolio = await readPortfolio(agentAddress);
+      const fundedValue = calculatePortfolioValue(portfolio, market.prices);
+      await supabase
+        .from("agents")
+        .update({ last_portfolio_value: Math.floor(fundedValue * 1e18) })
+        .eq("agent_id", tokenId);
+    } catch (e) {
+      console.error(`[Spawn] failed to set initial portfolio value for ${tokenId}:`, e);
+    }
+
+    // i. Generate the avatar in the background — not awaited, so the spawn
+    //    returns promptly. The UI falls back to DiceBear until it lands.
+    ensureAvatar(tokenId, strategyType as number, {
       prompt: avatarPrompt,
       seed: avatarSeed,
-    });
-    await supabase
-      .from("agents")
-      .update({ avatar_url: avatarUrl })
-      .eq("agent_id", tokenId);
+    })
+      .then((avatarUrl) =>
+        supabase.from("agents").update({ avatar_url: avatarUrl }).eq("agent_id", tokenId)
+      )
+      .catch((e) => console.error(`[Spawn] avatar gen failed for ${tokenId}:`, e));
 
     return NextResponse.json({
       ok: true,
       agentId: tokenId,
+      erc8004TokenId: tokenId,
       walletAddress: agentAddress,
     });
   } catch (error) {
