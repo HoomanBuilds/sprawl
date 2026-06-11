@@ -279,7 +279,11 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
                   <p className="mt-1 text-[9px] uppercase tracking-wider text-white/40">
                     Portfolio Value
                   </p>
-                  <p className="text-sm text-white/80">{fmt(num(agent.last_portfolio_value) / 1e18)}</p>
+                  {/* True current value = settlement baseline + live unrealized P&L
+                      (same formula as building size / computeWealth). */}
+                  <p className="text-sm text-white/80">
+                    {fmt((num(agent.last_portfolio_value) + num(agent.net_pnl)) / 1e18)}
+                  </p>
                 </div>
               </div>
 
