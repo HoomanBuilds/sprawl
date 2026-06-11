@@ -48,78 +48,66 @@ const STREET_W = 12;
 const BLOCK_FOOTPRINT_X = BLOCK_SIZE * LOT_W + (BLOCK_SIZE - 1) * ALLEY_W; // 161
 const BLOCK_FOOTPRINT_Z = BLOCK_SIZE * LOT_D + (BLOCK_SIZE - 1) * ALLEY_W; // 137
 
-const MAX_BUILDING_HEIGHT = 600;
-const MIN_BUILDING_HEIGHT = 35;
-const HEIGHT_RANGE = MAX_BUILDING_HEIGHT - MIN_BUILDING_HEIGHT; // 565
+const MAX_BUILDING_HEIGHT = 320;
+const MIN_BUILDING_HEIGHT = 30;
+const HEIGHT_RANGE = MAX_BUILDING_HEIGHT - MIN_BUILDING_HEIGHT; // 290
 
 // Floor + window derivation (design doc Appendix B.3)
 const FLOOR_HEIGHT = 6;
 const WINDOW_SPACING = 6;
 
-// ─── Building Dimension Formulas (Sprawl-specific) ─────────────
-// Reference: Design doc Section 1.7 + Appendix B.3
+// ─── Building Size: driven solely by current wealth ───────────
+// A building's size IS the agent's current wealth — the combined USD value of
+// all its assets at current prices. Height, width and depth all scale together
+// off one normalized wealth score, so the whole building grows when the agent
+// gets richer and shrinks when it loses money. Nothing else changes the size.
 
-const MAX_SPRAWL_EARNED = 100_000;
+// Current wealth (USD). last_portfolio_value is the settlement baseline and
+// net_pnl is the unrealized P&L since that baseline — rewritten every engine
+// tick — so their sum is the live portfolio value. Both fields are wei.
+export function computeWealth(agent: AgentRecord): number {
+  const w =
+    (Number(agent.last_portfolio_value) + Number(agent.net_pnl)) / 1e18;
+  return w > 0 ? w : 0;
+}
 
-// Height: driven by cumulative $SPRAWL earned (primary), level, raid wins.
-// Design doc Section 1.7: Math.pow(sprawlEarnedNorm, 0.45)*0.50 +
-//   Math.pow(levelNorm, 0.50)*0.25 + Math.pow(raidNorm, 0.55)*0.25
+// Log-normalize wealth to 0..1 between a floor and ceiling: a fresh agent
+// (~$5k) reads as a modest building, a whale (~$250k) maxes out, and the scale
+// never explodes. Log keeps mid-range differences legible.
+const WEALTH_FLOOR = 1_000;
+const WEALTH_CEIL = 250_000;
+export function wealthNorm(agent: AgentRecord): number {
+  const w = Math.max(computeWealth(agent), WEALTH_FLOOR);
+  const n =
+    (Math.log(w) - Math.log(WEALTH_FLOOR)) /
+    (Math.log(WEALTH_CEIL) - Math.log(WEALTH_FLOOR));
+  return Math.max(0, Math.min(1, n));
+}
+
+const MIN_FOOTPRINT = 12;
+const MAX_FOOTPRINT = 42;
+const FOOTPRINT_RANGE = MAX_FOOTPRINT - MIN_FOOTPRINT;
+
 export function computeBuildingHeight(agent: AgentRecord): number {
-  const sprawlNorm = Math.min(agent.sprawl_lifetime_earned / MAX_SPRAWL_EARNED, 1);
-  const levelNorm = agent.xp_level / 25;
-  const raidNorm = Math.min(agent.raid_wins / 100, 1);
-
-  const composite =
-    Math.pow(sprawlNorm, 0.45) * 0.5 +
-    Math.pow(levelNorm, 0.5) * 0.25 +
-    Math.pow(raidNorm, 0.55) * 0.25;
-
-  return Math.min(
-    MAX_BUILDING_HEIGHT,
-    MIN_BUILDING_HEIGHT + composite * HEIGHT_RANGE
-  );
+  return MIN_BUILDING_HEIGHT + wealthNorm(agent) * HEIGHT_RANGE;
 }
 
-// Width: trading volume (primary, grows every swap) + strategy breadth. → 14-40
-// total_volume is a human integer; strategy_count is # of allowed protocols.
-const MAX_VOLUME = 10_000;
 export function computeBuildingWidth(agent: AgentRecord): number {
-  const volNorm = Math.min((Number(agent.total_volume) || 0) / MAX_VOLUME, 1);
-  const stratNorm = Math.min((agent.strategy_count ?? 0) / 10, 1);
-  const score = Math.pow(volNorm, 0.5) * 0.75 + Math.pow(stratNorm, 0.5) * 0.25;
-  const jitter = (seededRandom(agent.agent_id * 7919) - 0.5) * 4;
-  return Math.round(14 + score * 24 + jitter);
-}
-
-// Depth: sustained activity (recent_actions) + level + raid involvement. → 12-34
-// All three climb as an agent stays busy, so footprints deepen over time.
-const MAX_RECENT_ACTIONS = 20;
-const MAX_RAID_COUNT = 30;
-export function computeBuildingDepth(agent: AgentRecord): number {
-  const actNorm = Math.min((agent.recent_actions ?? 0) / MAX_RECENT_ACTIONS, 1);
-  const levelNorm = (agent.xp_level ?? 1) / 25;
-  const raidNorm = Math.min(
-    ((agent.raid_wins ?? 0) + (agent.raid_losses ?? 0)) / MAX_RAID_COUNT,
-    1
+  // ±1.5 deterministic jitter so equally-wealthy buildings aren't identical;
+  // purely cosmetic, never enough to reorder buildings by size.
+  const jitter = (seededRandom(agent.agent_id * 7919) - 0.5) * 3;
+  return Math.max(
+    8,
+    Math.round(MIN_FOOTPRINT + wealthNorm(agent) * FOOTPRINT_RANGE + jitter)
   );
-  const score =
-    Math.pow(actNorm, 0.5) * 0.45 +
-    Math.pow(levelNorm, 0.5) * 0.35 +
-    Math.pow(raidNorm, 0.5) * 0.2;
-  const jitter = seededRandom(agent.agent_id) * 4 - 2; // ±2 deterministic
-  return Math.round(12 + score * 20 + jitter);
 }
 
-// Performance scale: live P&L swells (profit) or shrinks (loss) the whole
-// building, symmetric with cumulative growth. Losses bite ~1.8x harder so a
-// struggling agent's tower visibly contracts. net_pnl and last_portfolio_value
-// are both wei, so their ratio is the unitless relative return. → 0.5x .. 1.3x
-export function computePerfScale(agent: AgentRecord): number {
-  const baseline = Number(agent.last_portfolio_value) || 0;
-  if (baseline <= 0) return 1;
-  const ratio = (Number(agent.net_pnl) || 0) / baseline;
-  const k = ratio < 0 ? 1.8 : 1.0;
-  return Math.max(0.5, Math.min(1.3, 1 + ratio * k));
+export function computeBuildingDepth(agent: AgentRecord): number {
+  const jitter = (seededRandom(agent.agent_id) - 0.5) * 3;
+  return Math.max(
+    8,
+    Math.round(MIN_FOOTPRINT + wealthNorm(agent) * FOOTPRINT_RANGE + jitter)
+  );
 }
 
 // Glow: reputation_score normalized 0-1 (from ERC-8004)
@@ -140,8 +128,9 @@ export function computeLitPercentage(agent: AgentRecord): number {
 export function computeBuildingTint(
   agent: AgentRecord
 ): [number, number, number, number] {
-  if (agent.net_pnl > 0) return [0.2, 1.0, 0.3, 0.5]; // green = profitable
-  if (agent.net_pnl < 0) return [1.0, 0.2, 0.2, 0.5]; // red = losing
+  const pnl = Number(agent.net_pnl); // NUMERIC comes back as a string
+  if (pnl > 0) return [0.2, 1.0, 0.3, 0.5]; // green = profitable
+  if (pnl < 0) return [1.0, 0.2, 0.2, 0.5]; // red = losing
   return [0.5, 0.5, 0.5, 0.3]; // neutral gray
 }
 
@@ -211,18 +200,18 @@ export function generateCityLayout(agents: AgentRecord[]): {
 } {
   const buildings: CityBuilding[] = [];
 
-  // Sort by composite height score (biggest buildings at center)
+  // Sort by current wealth so the richest, biggest buildings sit at the center.
   const sorted = [...agents].sort(
-    (a, b) => computeBuildingHeight(b) - computeBuildingHeight(a)
+    (a, b) => computeWealth(b) - computeWealth(a)
   );
 
-  // The biggest lifetime earner gets landmark treatment (crown + beacon).
+  // The wealthiest agent (tallest building) gets landmark treatment (crown + beacon).
   let landmarkId = -1;
-  let topEarned = -Infinity;
+  let topWealth = -Infinity;
   for (const a of agents) {
-    const earned = Number(a.sprawl_lifetime_earned) || 0;
-    if (earned > topEarned) {
-      topEarned = earned;
+    const w = computeWealth(a);
+    if (w > topWealth) {
+      topWealth = w;
       landmarkId = a.agent_id;
     }
   }
@@ -245,11 +234,10 @@ export function generateCityLayout(agents: AgentRecord[]): {
       const x = blockWorldX + lotCol * (LOT_W + ALLEY_W);
       const z = blockWorldZ + lotRow * (LOT_D + ALLEY_W);
 
-      // Live P&L scales the whole building up (profit) or down (loss).
-      const perf = computePerfScale(agent);
-      const height = computeBuildingHeight(agent) * perf;
-      const width = Math.max(8, Math.round(computeBuildingWidth(agent) * perf));
-      const depth = Math.max(8, Math.round(computeBuildingDepth(agent) * perf));
+      // Size is current wealth — height, width and depth scale together.
+      const height = computeBuildingHeight(agent);
+      const width = computeBuildingWidth(agent);
+      const depth = computeBuildingDepth(agent);
       const litPercentage = computeLitPercentage(agent);
       const tint = computeBuildingTint(agent);
       const glow = computeGlow(agent);
