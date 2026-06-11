@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import type { CityBuilding } from '@/types/city';
 import DecisionFeed from '@/components/DecisionFeed';
 import MiniLeaderboard from '@/components/MiniLeaderboard';
@@ -61,6 +62,12 @@ export default function WatchPage() {
     >
       <div className="flex items-center justify-between px-4 py-2 border-b border-[color:var(--color-sprawl-accent)]/20 bg-[rgba(13,13,15,0.9)] z-10">
         <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border border-[color:var(--color-sprawl-accent)]/60 px-2 py-1 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
+          >
+            ← Back
+          </Link>
           <span className="font-[family-name:var(--font-pixel)] text-lg text-[color:var(--color-sprawl-cream)] uppercase">
             SPRAWL
           </span>

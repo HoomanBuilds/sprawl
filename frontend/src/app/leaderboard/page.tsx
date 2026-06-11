@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useLeaderboard, type SortField, type StrategyFilter } from '@/hooks/useLeaderboard';
 import { avatarUrl } from '@/lib/avatar-url';
 import { PixelButton } from '@/components/ui/PixelButton';
@@ -40,6 +41,12 @@ export default function LeaderboardPage() {
   return (
     <div className="min-h-screen bg-[color:var(--color-sprawl-bg)] p-4 md:p-8">
       <div className="mx-auto max-w-6xl">
+        <Link
+          href="/"
+          className="mb-4 inline-block font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border-2 border-[color:var(--color-sprawl-accent)] bg-[rgba(13,13,15,0.7)] px-3 py-1.5 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
+        >
+          ← Back to The Sprawl
+        </Link>
         <h1 className="font-[family-name:var(--font-pixel)] text-3xl text-[color:var(--color-sprawl-accent)] uppercase tracking-wider mb-6">
           Leaderboard
         </h1>
