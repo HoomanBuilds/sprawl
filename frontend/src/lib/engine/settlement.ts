@@ -5,7 +5,14 @@ import { getDeployerWallet, getRefereeWallet } from '@/lib/ethers-provider';
 import { CONTRACTS, ERC8004 } from '@/lib/config';
 import CityRefereeABI from '@/constants/abi/CityReferee.json';
 import { addMemory } from '@/lib/memory/memory-stream';
+import { withTxLock } from '@/lib/execution/tx-lock';
 import type { AgentRecord } from '@/types/agent';
+
+// Exact BigInt math for the wei NUMERIC ledger (avoids Number()*1e18 float loss).
+function addWei(current: number | string | null, humanReward: number): string {
+  const base = BigInt(String(current ?? '0').split('.')[0] || '0');
+  return (base + BigInt(Math.round(humanReward)) * 10n ** 18n).toString();
+}
 
 const SPRAWL_REWARD_PCT = 10;
 const MIN_PROFIT_FOR_REWARD = 5;
@@ -78,8 +85,10 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
   try {
     const pnlWei = parseEther(dailyPnl.toFixed(18));
     const rewardWei = parseEther(sprawlReward.toString());
-    const tx = await cityReferee.settleDaily(agent.agent_id, pnlWei, rewardWei);
-    await tx.wait();
+    await withTxLock(async () => {
+      const tx = await cityReferee.settleDaily(agent.agent_id, pnlWei, rewardWei);
+      await tx.wait();
+    });
   } catch (err: any) {
     console.error(
       `[Settlement] CityReferee.settleDaily failed for agent ${agent.agent_id}: ${err.message}`,
@@ -87,12 +96,9 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
     sprawlReward = 0;
   }
 
-  // Push the daily P&L to the canonical ERC-8004 ReputationRegistry as
-  // feedback (best-effort). Sent by the referee wallet, NOT the deployer —
-  // the registry rejects feedback from an agent's own ERC-8004 owner.
-  // (CityReferee.recordOutcome is unusable: it was compiled against the
-  // pre-Jan-2026 9-arg giveFeedback and reverts against the live registry.)
-  await pushErc8004Feedback(agent.agent_id, dailyPnl);
+  // Best-effort ERC-8004 feedback via the referee wallet; fire-and-forget so
+  // referee gas exhaustion can't wedge the ledger write below.
+  void pushErc8004Feedback(agent.agent_id, dailyPnl);
 
   const supabase = getSupabaseAdmin();
   const today = new Date().toISOString().split('T')[0];
@@ -106,8 +112,8 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
       // Baseline just rebased to currentValue, so unrealized P&L resets to 0;
       // this keeps the invariant (last_portfolio_value + net_pnl == wealth).
       net_pnl: 0,
-      sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
-      sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
+      sprawl_balance: addWei(agent.sprawl_balance, sprawlReward),
+      sprawl_lifetime_earned: addWei(agent.sprawl_lifetime_earned, sprawlReward),
       profit_streak: profitStreak,
       reputation_score: reputationDrift(agent.reputation_score, dailyPnl),
       xp_daily: 0,
@@ -187,16 +193,14 @@ async function rollingSettle(agent: AgentRecord): Promise<void> {
 
   const profitStreak = pnl > 0 ? agent.profit_streak + 1 : 0;
 
-  // Rebase the baseline to currentValue (bank the period) and reset net_pnl to
-  // 0 in the same write, so wealth = last_portfolio_value + net_pnl stays exact
-  // at every instant instead of flickering until the next tick rewrites net_pnl.
+  // Rebase baseline + reset net_pnl together so wealth stays exact (no flicker).
   await supabase
     .from('agents')
     .update({
       last_portfolio_value: Math.floor(currentValue * 1e18),
       net_pnl: 0,
-      sprawl_balance: Number(agent.sprawl_balance) + sprawlReward * 1e18,
-      sprawl_lifetime_earned: Number(agent.sprawl_lifetime_earned) + sprawlReward * 1e18,
+      sprawl_balance: addWei(agent.sprawl_balance, sprawlReward),
+      sprawl_lifetime_earned: addWei(agent.sprawl_lifetime_earned, sprawlReward),
       profit_streak: profitStreak,
       reputation_score: reputationDrift(agent.reputation_score, pnl),
     })
