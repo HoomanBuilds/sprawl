@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { CityBuilding } from '@/types/city';
 import DecisionFeed from '@/components/DecisionFeed';
 import MiniLeaderboard from '@/components/MiniLeaderboard';
@@ -13,6 +14,7 @@ import { CRTOverlay } from '@/components/CRTOverlay';
 const CityCanvas = dynamic(() => import('@/components/CityCanvas'), { ssr: false });
 
 export default function WatchPage() {
+  const router = useRouter();
   const [buildings, setBuildings] = useState<CityBuilding[]>([]);
 
   const fetchCity = useCallback(async () => {
@@ -141,7 +143,7 @@ export default function WatchPage() {
             </h3>
           </div>
           <div className="p-2">
-            <MiniLeaderboard contained onSelectAgent={() => {}} />
+            <MiniLeaderboard contained onSelectAgent={(id) => router.push(`/agent/${id}`)} />
           </div>
         </div>
       </div>

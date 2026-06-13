@@ -134,12 +134,26 @@ function CityPage() {
         onIntroEnd={() => setIntroMode(false)}
       />
 
-      <div className="fixed left-1/2 top-16 z-50 -translate-x-1/2">
+      {loadingDone && buildings.length === 0 && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 text-center">
+          <p className="font-[family-name:var(--font-pixel)] text-sm uppercase tracking-wider text-white/70">
+            The Sprawl is empty
+          </p>
+          <Link
+            href="/spawn"
+            className="font-[family-name:var(--font-pixel)] text-[11px] uppercase tracking-wider text-[color:var(--color-sprawl-bg)] border-2 border-[color:var(--color-sprawl-accent)] bg-[color:var(--color-sprawl-accent)] px-4 py-2 transition-none hover:opacity-80"
+          >
+            + Spawn the first agent
+          </Link>
+        </div>
+      )}
+
+      <div className="hidden md:block fixed left-1/2 top-16 z-50 -translate-x-1/2">
         <SprawlPriceSparkline />
       </div>
 
-      {/* Wallet connect (RainbowKit) — raised above the activity ticker */}
-      <div className="fixed left-4 bottom-14 z-50">
+      {/* Wallet connect — top-left on mobile (clear of the bottom nav), bottom-left on desktop */}
+      <div className="fixed left-4 top-4 z-50 md:top-auto md:bottom-14">
         <ConnectButton />
       </div>
 
@@ -165,15 +179,18 @@ function CityPage() {
         </Link>
       </nav>
 
-      <AgentSearch onSelectAgent={setSelectedAgentId} />
-      <ThemeSwitcher theme={theme} onThemeChange={setTheme} />
-      <MiniLeaderboard onSelectAgent={setSelectedAgentId} />
-      <MiniMap
-        buildings={buildings}
-        focusedAgentId={selectedAgentId}
-        onSelectAgent={setSelectedAgentId}
-      />
-      <DecisionFeed />
+      {/* Heavy data panels are desktop-only; mobile shows the city + nav + tap-to-inspect */}
+      <div className="hidden md:contents">
+        <AgentSearch onSelectAgent={setSelectedAgentId} />
+        <ThemeSwitcher theme={theme} onThemeChange={setTheme} />
+        <MiniLeaderboard onSelectAgent={setSelectedAgentId} />
+        <MiniMap
+          buildings={buildings}
+          focusedAgentId={selectedAgentId}
+          onSelectAgent={setSelectedAgentId}
+        />
+        <DecisionFeed />
+      </div>
       <ActivityTicker />
 
       {selectedAgentId != null && (

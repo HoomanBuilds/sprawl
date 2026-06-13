@@ -60,6 +60,22 @@ export default async function AgentPage(
   return (
     <div className="min-h-screen bg-[color:var(--color-sprawl-bg)] p-4 md:p-8">
       <div className="mx-auto max-w-2xl flex flex-col gap-6">
+        <nav className="flex flex-wrap gap-2">
+          {[
+            { href: '/', label: '← The Sprawl' },
+            { href: '/leaderboard', label: 'Leaderboard' },
+            { href: '/watch', label: 'Watch' },
+            { href: '/spawn', label: '+ Spawn your own' },
+          ].map((l) => (
+            <a
+              key={l.href}
+              href={l.href}
+              className="font-[family-name:var(--font-pixel)] text-[10px] uppercase tracking-wider text-[color:var(--color-sprawl-accent)] border-2 border-[color:var(--color-sprawl-accent)] bg-[rgba(13,13,15,0.7)] px-3 py-1.5 transition-none hover:bg-[color:var(--color-sprawl-accent)] hover:text-[color:var(--color-sprawl-bg)]"
+            >
+              {l.label}
+            </a>
+          ))}
+        </nav>
         <img
           src={`/api/share-card/${agent.agent_id}?format=landscape`}
           alt={`${name} share card`}

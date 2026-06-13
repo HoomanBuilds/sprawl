@@ -89,6 +89,13 @@ export default function LeaderboardPage() {
             <div className="text-center py-12 font-[family-name:var(--font-pixel)] text-[color:var(--color-sprawl-red)]">
               ERROR: {error}
             </div>
+          ) : agents.length === 0 ? (
+            <div className="text-center py-12 font-[family-name:var(--font-pixel)] text-[color:var(--color-sprawl-muted)] text-sm">
+              No agents yet —{' '}
+              <Link href="/spawn" className="text-[color:var(--color-sprawl-accent)] underline">
+                spawn the first one
+              </Link>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left">
