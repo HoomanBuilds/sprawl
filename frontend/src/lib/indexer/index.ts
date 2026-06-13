@@ -108,6 +108,7 @@ async function findAgentByWallet(walletAddress: string): Promise<number | null> 
 async function handleAgentSpawned(agentId: bigint, wallet: string, strategyType: number): Promise<void> {
     console.log(`[Indexer] AgentSpawned: ${agentId} (${wallet})`);
     try {
+        // ignoreDuplicates: never re-seed a live agent's counters back to 0.
         await supabaseAdmin.from('agents').upsert({
             agent_id: Number(agentId),
             wallet_address: wallet,
@@ -117,7 +118,7 @@ async function handleAgentSpawned(agentId: bigint, wallet: string, strategyType:
             net_pnl: 0,
             xp_level: 1,
             xp_total: 0,
-        }, { onConflict: 'agent_id' });
+        }, { onConflict: 'agent_id', ignoreDuplicates: true });
 
         await writeFeedAndBroadcast('spawn', Number(agentId), null, { wallet, strategyType });
     } catch (err: any) {
@@ -379,6 +380,14 @@ export async function startIndexer(signal: AbortSignal): Promise<void> {
         console.log('[Indexer] Shutting down');
         realtimeChannel.unsubscribe();
     }, { once: true });
+
+    // Cold start: seed cursor near the tip so a fresh DB doesn't scan from block 1.
+    if ((await getLastBlock()) <= 0) {
+        const tipNow = await provider.getBlockNumber();
+        const seed = Math.max(0, tipNow - 50);
+        await setLastBlock(seed);
+        console.log(`[Indexer] Cold start — cursor seeded to block ${seed} (tip ${tipNow})`);
+    }
 
     while (!signal.aborted) {
         try {

@@ -253,13 +253,10 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
         }
     }
 
-    // 10. UPDATE agent stats in Supabase
+    // 10. Touch liveness only; recent_actions is owned by the increment_volume RPC.
     await supabaseAdmin
         .from('agents')
-        .update({
-            last_action_at: new Date().toISOString(),
-            recent_actions: agent.recent_actions + 1,
-        })
+        .update({ last_action_at: new Date().toISOString() })
         .eq('agent_id', agent.agent_id);
 
     // 11. PROGRESS — trade XP (raids grant their own XP in the executor) +
