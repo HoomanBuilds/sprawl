@@ -96,30 +96,35 @@ export default function BuildingInspector({ agent_id, onClose }: BuildingInspect
     setLoading(true);
     setAgent(null);
 
-    Promise.all([
-      supabase.from("agents").select("*").eq("agent_id", agent_id).single(),
-      supabase
-        .from("trade_history")
-        .select("id, action, token_in, token_out, amount_in, pnl_realized, tx_hash, created_at")
-        .eq("agent_id", agent_id)
-        .order("created_at", { ascending: false })
-        .limit(10),
-      supabase
-        .from("raid_tags")
-        .select("attacker_name, expires_at")
-        .eq("building_agent_id", agent_id)
-        .eq("active", true)
-        .maybeSingle(),
-    ]).then(([agentRes, tradesRes, raidRes]) => {
-      if (cancelled) return;
-      if (agentRes.data) setAgent(agentRes.data as unknown as AgentRecord);
-      if (tradesRes.data) setTrades(tradesRes.data as unknown as Trade[]);
-      if (raidRes.data) setRaidTag(raidRes.data as unknown as RaidTag);
-      setLoading(false);
-    });
+    const load = () =>
+      Promise.all([
+        supabase.from("agents").select("*").eq("agent_id", agent_id).single(),
+        supabase
+          .from("trade_history")
+          .select("id, action, token_in, token_out, amount_in, pnl_realized, tx_hash, created_at")
+          .eq("agent_id", agent_id)
+          .order("created_at", { ascending: false })
+          .limit(10),
+        supabase
+          .from("raid_tags")
+          .select("attacker_name, expires_at")
+          .eq("building_agent_id", agent_id)
+          .eq("active", true)
+          .maybeSingle(),
+      ]).then(([agentRes, tradesRes, raidRes]) => {
+        if (cancelled) return;
+        if (agentRes.data) setAgent(agentRes.data as unknown as AgentRecord);
+        if (tradesRes.data) setTrades(tradesRes.data as unknown as Trade[]);
+        setRaidTag((raidRes.data as unknown as RaidTag) ?? null);
+        setLoading(false);
+      });
+
+    load();
+    const id = setInterval(load, 12_000); // keep P&L / value / trades live while open
 
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
   }, [agent_id]);
 

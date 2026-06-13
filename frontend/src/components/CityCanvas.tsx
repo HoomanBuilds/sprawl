@@ -378,17 +378,21 @@ function CameraFocus({
 
   const buildingsRef = useRef(buildings);
   buildingsRef.current = buildings;
+  const framedId = useRef<number | null>(null);
 
   useEffect(() => {
     if (autoOrbit && controlsRef.current) controlsRef.current.autoRotate = true;
 
     if (focusedBuilding == null) {
+      framedId.current = null;
       if (controlsRef.current) controlsRef.current.autoRotate = true;
       return;
     }
 
+    if (framedId.current === focusedBuilding) return;
     const b = buildingsRef.current.find((x) => x.agent_id === focusedBuilding);
-    if (!b) return;
+    if (!b) return; // not placed yet — re-runs when buildings load (deps)
+    framedId.current = focusedBuilding;
 
     startPos.current.copy(camera.position);
     if (controlsRef.current) startLook.current.copy(controlsRef.current.target);
@@ -405,7 +409,7 @@ function CameraFocus({
     progress.current = 0;
     active.current = true;
     if (controlsRef.current && !autoOrbit) controlsRef.current.autoRotate = false;
-  }, [focusedBuilding, camera, controlsRef, autoOrbit]);
+  }, [focusedBuilding, buildings, camera, controlsRef, autoOrbit]);
 
   useFrame((_, delta) => {
     if (!active.current) return;
