@@ -18,10 +18,8 @@ const SPRAWL_REWARD_PCT = 10;
 const MIN_PROFIT_FOR_REWARD = 5;
 const MAX_DAILY_SPRAWL = 500;
 
-// Reputation drifts with performance: profitable settlement periods raise it,
-// losing ones lower it (clamped 0-100). Raids also move it (see indexer).
-// |pnl| below MIN_PROFIT_FOR_REWARD is treated as noise and leaves rep alone.
-export function reputationDrift(currentRep: number, pnl: number): number {
+// Reputation drifts ±1 with settlement P&L (within noise = unchanged), clamped 0-100.
+function reputationDrift(currentRep: number, pnl: number): number {
   let delta = 0;
   if (pnl > MIN_PROFIT_FOR_REWARD) delta = 1;
   else if (pnl < -MIN_PROFIT_FOR_REWARD) delta = -1;

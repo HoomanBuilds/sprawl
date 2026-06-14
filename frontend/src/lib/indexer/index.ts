@@ -5,7 +5,6 @@ import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import CityStateABI from '@/constants/abi/CityState.json';
 import RaidContractABI from '@/constants/abi/RaidContract.json';
 import { supabaseAdmin } from '../supabase';
-import { trackDailyMission } from '../dailies';
 
 // Alchemy free tier caps eth_getLogs at a 10-block range; chunk to that limit.
 const CHUNK_SIZE = 10;
@@ -73,7 +72,6 @@ function symbolFromAddress(addr: string): string {
     return TOKEN_SYMBOLS[addr] ?? addr.slice(0, 10);
 }
 
-// Nudge reputation_score by delta, clamped 0-100 (raid outcomes move rep).
 async function adjustReputation(agentId: number, delta: number): Promise<void> {
     try {
         const { data } = await supabaseAdmin
@@ -206,26 +204,21 @@ async function handleSwap(
         // Look up agent by wallet address
         const agentId = await findAgentByWallet(trader);
 
-        await supabaseAdmin.from('trade_history').insert({
-            agent_id: agentId,
-            action: 'swap',
-            token_in: symIn,
-            token_out: symOut,
-            amount_in: amountIn.toString(),
-            amount_out: amountOut.toString(),
-            price_at_trade: parseFloat(formatEther(priceAfter)),
-            tx_hash: txHash,
-        });
-
-        // Update agent volume if this is an agent trade (not market maker)
-        if (agentId !== null) {
-            const amountUSD = parseFloat(formatEther(amountIn));
-            await supabaseAdmin.rpc('increment_volume', {
-                p_agent_id: agentId,
-                p_amount: Math.floor(amountUSD),
+        // Agent swaps are recorded + volume-counted by the engine (game-loop),
+        // exactly once. The indexer only records non-agent (market-maker/noise)
+        // swaps, which feed the $SPRAWL price chart — so no duplicate rows and
+        // no double-counted volume on reprocess.
+        if (agentId === null) {
+            await supabaseAdmin.from('trade_history').insert({
+                agent_id: null,
+                action: 'swap',
+                token_in: symIn,
+                token_out: symOut,
+                amount_in: amountIn.toString(),
+                amount_out: amountOut.toString(),
+                price_at_trade: parseFloat(formatEther(priceAfter)),
+                tx_hash: txHash,
             });
-            await trackDailyMission(agentId, 'trade_volume_500', { volume: amountUSD });
-            await trackDailyMission(agentId, 'trade_volume_2000', { volume: amountUSD });
         }
 
         await writeFeedAndBroadcast('swap', agentId, null, {

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../supabase';
+import { trackDailyMission } from '../dailies';
 import { readMarketContext, readPortfolio, calculatePortfolioValue, getLargestHolding } from './market-reader';
 import { addMemory } from '../memory/memory-stream';
 import { retrieveMemories } from '../memory/retrieval';
@@ -222,7 +223,9 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
         return;
     }
 
-    // 8. RECORD — trade_history + memory + CityState
+    // 8. RECORD — the engine owns the trade_history row for its own swaps (with
+    //    realized P&L + rationale) and counts volume here exactly once. The
+    //    indexer skips agent swaps, so volume can't be double-counted on replay.
     await supabaseAdmin.from('trade_history').insert({
         agent_id: agent.agent_id,
         action: finalDecision.action,
@@ -235,6 +238,15 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
         tx_hash: result.txHash,
         rationale: finalDecision.rationale,
     });
+
+    if (finalDecision.action === 'swap') {
+        const vol = Math.floor(parseFloat(result.amountIn));
+        if (vol > 0) {
+            await supabaseAdmin.rpc('increment_volume', { p_agent_id: agent.agent_id, p_amount: vol });
+            await trackDailyMission(agent.agent_id, 'trade_volume_500', { volume: vol });
+            await trackDailyMission(agent.agent_id, 'trade_volume_2000', { volume: vol });
+        }
+    }
 
     await addMemory(agent.agent_id, {
         type: 'trade',
