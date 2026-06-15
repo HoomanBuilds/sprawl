@@ -9,16 +9,13 @@ import { join } from "path";
 
 const LOCK_DIR = join(process.cwd(), ".locks");
 const LOCK_FILE = join(LOCK_DIR, "deployer-tx.lock");
-// Must exceed the bounded tx wait (90s) so a legitimately slow deployer tx never
-// has its lock stolen mid-flight — that stale-nonce reuse caused "nonce too low".
-const BREAK_AFTER_MS = 120_000;
+const BREAK_AFTER_MS = 120_000; // must exceed the 90s tx wait
 let cleanedStale = false;
 
 export async function withTxLock<T>(fn: () => Promise<T>): Promise<T> {
   if (!existsSync(LOCK_DIR)) mkdirSync(LOCK_DIR, { recursive: true });
 
-  // A lock file left by a crashed previous run is stale; clear it once so a
-  // restart isn't blocked for the full break timeout.
+  // clear a stale lock left by a crashed run, once per process
   if (!cleanedStale) {
     cleanedStale = true;
     if (existsSync(LOCK_FILE)) {

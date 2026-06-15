@@ -75,8 +75,6 @@ export class GuardrailLayer {
             };
         }
 
-        // Swap pair must have a pool. The DEX is a sUSDC hub, so cross-token
-        // pairs (e.g. sETH/sSOL) have no pool and revert with "Pool not found".
         if (decision.action === 'swap') {
             const { tokenIn, tokenOut } = decision.params;
             const hasPool = market.pools.some(
