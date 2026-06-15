@@ -86,8 +86,8 @@ export async function fetchRealPrices(): Promise<Record<string, CoinGeckoPrice>>
 // DEX price helper + $SPRAWL price snapshot (for the price chart)
 // ---------------------------------------------------------------------------
 
-const NOISE_MIN_PCT = 0.006;
-const NOISE_MAX_PCT = 0.02;
+const NOISE_MIN_PCT = 0.002;
+const NOISE_MAX_PCT = 0.006;
 
 async function getDexPrice(dex: Contract, tokenAddress: string): Promise<number> {
     const priceRaw = await dex.getPrice(tokenAddress, CONTRACTS.sUSDC);
