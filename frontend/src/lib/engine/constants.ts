@@ -1,4 +1,4 @@
-export const TICK_INTERVAL_MS = 60_000;
+export const TICK_INTERVAL_MS = 3_600_000; // agents wake once per hour
 export const MAX_AGENTS = 50;
 export const REFLECTION_THRESHOLD = 150;
 export const MAX_TX_PER_HOUR = 30;
