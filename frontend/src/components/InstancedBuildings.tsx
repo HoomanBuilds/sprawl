@@ -276,7 +276,7 @@ export default memo(function InstancedBuildings({
       roof[i * 3 + 1] = _col.g;
       roof[i * 3 + 2] = _col.b;
       const seed =
-        b.name.split("").reduce((a, c) => a + c.charCodeAt(0), 0) * 137 +
+        (b.name ?? "").split("").reduce((a, c) => a + c.charCodeAt(0), 0) * 137 +
         b.agent_id * 7919;
 
       const bandIndex = Math.min(5, Math.max(0, Math.round(b.litPercentage * 5)));

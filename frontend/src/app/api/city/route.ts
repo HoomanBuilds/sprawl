@@ -30,7 +30,9 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to fetch agents" }, { status: 500 });
   }
 
-  const agents = (agentsResult.data ?? []) as unknown as AgentRecord[];
+  const agents = ((agentsResult.data ?? []) as unknown as AgentRecord[]).filter(
+    (a) => a.name && a.wallet_address
+  );
 
   // Compute city stats inline (no city_stats table exists).
   const stats = {
