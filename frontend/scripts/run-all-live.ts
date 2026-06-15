@@ -23,6 +23,10 @@ process.on("unhandledRejection", (e: unknown) => {
 });
 
 async function main() {
+  // Node < 22 has no global WebSocket; Supabase realtime needs one.
+  const g = globalThis as { WebSocket?: unknown };
+  if (typeof g.WebSocket === "undefined") g.WebSocket = (await import("ws")).default;
+
   const { startEngine } = await import("../src/lib/engine/game-loop");
   const { startIndexer } = await import("../src/lib/indexer");
   const { marketMakerLoop } = await import("../src/lib/market-maker");
