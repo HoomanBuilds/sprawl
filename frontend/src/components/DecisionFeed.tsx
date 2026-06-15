@@ -149,8 +149,8 @@ export default function DecisionFeed({ contained = false }: { contained?: boolea
     <div
       className={
         contained
-          ? "flex h-full w-full flex-col overflow-y-auto border border-white/10 bg-black/40 p-3"
-          : "fixed right-4 top-4 z-50 w-80 max-h-[70vh] overflow-y-auto rounded-lg border border-white/10 bg-black/80 p-3 backdrop-blur-sm"
+          ? "thin-scroll flex h-full w-full flex-col overflow-y-auto border border-white/10 bg-black/40 p-3"
+          : "thin-scroll fixed right-4 top-4 z-50 w-80 max-h-[70vh] overflow-y-auto rounded-lg border border-white/10 bg-black/80 p-3 backdrop-blur-sm"
       }
     >
       <h3 className="mb-2 font-mono text-xs uppercase tracking-wider text-white/60">
