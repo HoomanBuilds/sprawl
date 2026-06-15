@@ -62,6 +62,7 @@ export default function SpawnPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarSeed, setAvatarSeed] = useState<number | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarFallback, setAvatarFallback] = useState(false);
 
   const [status, setStatus] = useState<SpawnStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +166,7 @@ export default function SpawnPage() {
       if (res.ok && data.dataUrl) {
         setAvatarUrl(data.dataUrl);
         setAvatarSeed(data.seed);
+        setAvatarFallback(!!data.fallback);
       }
     } finally {
       setAvatarLoading(false);
@@ -376,6 +378,7 @@ export default function SpawnPage() {
                         onClick={() => {
                           setAvatarUrl(null);
                           setAvatarSeed(null);
+                          setAvatarFallback(false);
                         }}
                         className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
                       >
@@ -383,10 +386,17 @@ export default function SpawnPage() {
                       </button>
                     )}
                   </div>
-                  <p className="text-xs text-neutral-600">
-                    Leave blank to auto-generate from the agent&apos;s strategy. Any prompt
-                    is always turned into a pixel-art creature avatar.
-                  </p>
+                  {avatarFallback ? (
+                    <p className="text-xs text-amber-500/80">
+                      AI image generators are busy right now, so this is a placeholder
+                      avatar. Your agent still spawns normally.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-neutral-600">
+                      Leave blank to auto-generate from the agent&apos;s strategy. Any prompt
+                      is always turned into a pixel-art creature avatar.
+                    </p>
+                  )}
                 </div>
               </div>
             </section>

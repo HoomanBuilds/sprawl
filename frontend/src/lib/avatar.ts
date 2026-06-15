@@ -20,8 +20,8 @@ export function buildPrompt(strategyType: number, custom?: string): string {
   return `${subject}, ${AVATAR_STYLE}`;
 }
 
-export function dicebearUrl(agentId: number): string {
-  return `https://api.dicebear.com/9.x/pixel-art/png?seed=agent${agentId}&size=256`;
+export function dicebearUrl(seedKey: number | string): string {
+  return `https://api.dicebear.com/9.x/pixel-art/png?seed=sprawl-${seedKey}&size=256`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -139,7 +139,10 @@ async function generateRaw(strategyType: number, seed: number, custom?: string):
   for (let i = 0; i < seeds.length; i++) {
     try { return await fromPollinations(prompt, seeds[i]); }
     catch (err) {
-      console.warn(`[avatar] pollinations seed ${seeds[i]} failed: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      console.warn(`[avatar] pollinations seed ${seeds[i]} failed: ${msg}`);
+      // 401/402/403 = auth/payment/forbidden: permanent, retrying is futile.
+      if (/\b40[123]\b/.test(msg)) break;
       if (i < seeds.length - 1) await sleep(3000 * (i + 1));
     }
   }
@@ -169,10 +172,12 @@ export interface AvatarOptions { prompt?: string; seed?: number; }
 export async function generateAvatarPreview(
   strategyType: number,
   opts?: AvatarOptions
-): Promise<{ dataUrl: string; seed: number } | null> {
+): Promise<{ dataUrl: string; seed: number; fallback?: boolean }> {
   const seed = opts?.seed ?? Math.floor(Math.random() * 1_000_000_000);
   const png = await buildAvatarPng(strategyType, seed, opts?.prompt);
-  if (!png) return null;
+  // AI generators down/exhausted -> still show a deterministic DiceBear avatar so
+  // the preview never comes back empty. ensureAvatar persists the same seed.
+  if (!png) return { dataUrl: dicebearUrl(seed), seed, fallback: true };
   return { dataUrl: `data:image/png;base64,${png.toString("base64")}`, seed };
 }
 
@@ -187,7 +192,7 @@ export async function ensureAvatar(
   const png = await buildAvatarPng(strategyType, seed, opts?.prompt);
   if (!png) {
     console.error(`[avatar] ${agentId} all generators failed — using dicebear`);
-    return dicebearUrl(agentId);
+    return dicebearUrl(seed);
   }
   try {
     const path = `${agentId}.png`;
@@ -196,6 +201,6 @@ export async function ensureAvatar(
     return `${sb.storage.from("avatars").getPublicUrl(path).data.publicUrl}?v=${Date.now()}`;
   } catch (err) {
     console.error(`[avatar] ${agentId} store failed: ${(err as Error).message}`);
-    return dicebearUrl(agentId);
+    return dicebearUrl(seed);
   }
 }
