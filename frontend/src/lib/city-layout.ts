@@ -84,21 +84,22 @@ export function wealthNorm(agent: AgentRecord): number {
   return Math.max(0, Math.min(1, n));
 }
 
+// Footprints must stay inside the lot or buildings merge. Lot pitch is
+// LOT_W+ALLEY_W = 41 in x and LOT_D+ALLEY_W = 35 in z, so width and depth get
+// separate caps (plus the +-1.5 jitter) that leave a clear gap on every side.
 const MIN_FOOTPRINT = 12;
-const MAX_FOOTPRINT = 42;
-const FOOTPRINT_RANGE = MAX_FOOTPRINT - MIN_FOOTPRINT;
+const MAX_WIDTH = 34; // x pitch 41
+const MAX_DEPTH = 28; // z pitch 35 (tighter)
 
 export function computeBuildingHeight(agent: AgentRecord): number {
   return MIN_BUILDING_HEIGHT + wealthNorm(agent) * HEIGHT_RANGE;
 }
 
 export function computeBuildingWidth(agent: AgentRecord): number {
-  // ±1.5 deterministic jitter so equally-wealthy buildings aren't identical;
-  // purely cosmetic, never enough to reorder buildings by size.
   const jitter = (seededRandom(agent.agent_id * 7919) - 0.5) * 3;
   return Math.max(
     8,
-    Math.round(MIN_FOOTPRINT + wealthNorm(agent) * FOOTPRINT_RANGE + jitter)
+    Math.min(MAX_WIDTH, Math.round(MIN_FOOTPRINT + wealthNorm(agent) * (MAX_WIDTH - MIN_FOOTPRINT) + jitter))
   );
 }
 
@@ -106,7 +107,7 @@ export function computeBuildingDepth(agent: AgentRecord): number {
   const jitter = (seededRandom(agent.agent_id) - 0.5) * 3;
   return Math.max(
     8,
-    Math.round(MIN_FOOTPRINT + wealthNorm(agent) * FOOTPRINT_RANGE + jitter)
+    Math.min(MAX_DEPTH, Math.round(MIN_FOOTPRINT + wealthNorm(agent) * (MAX_DEPTH - MIN_FOOTPRINT) + jitter))
   );
 }
 
