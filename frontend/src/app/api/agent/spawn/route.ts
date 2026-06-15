@@ -23,9 +23,6 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://sprawl.vercel.app";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Mantle Sepolia's public RPC can drop receipts and leave tx.wait() hanging
-// forever, which left the spawn UI stuck on "rising" while the agent had already
-// been created. Bound every confirmation so the request always returns.
 const TX_TIMEOUT = 40_000;
 
 interface SpawnBody {
@@ -145,7 +142,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // c. Insert the agents row — agent_id IS the ERC-8004 tokenId.
+    // c. Persist the encrypted wallet before the agents row (no keyless orphan).
+    await storeAgentWallet(tokenId, agentWallet);
+
+    // d. Insert the agents row — agent_id IS the ERC-8004 tokenId.
     const { error: insertError } = await supabase.from("agents").insert({
       agent_id: tokenId,
       wallet_address: agentAddress,
@@ -168,9 +168,6 @@ export async function POST(req: NextRequest) {
       );
     }
     createdAgentId = tokenId;
-
-    // d. Persist the encrypted agent wallet under the tokenId.
-    await storeAgentWallet(tokenId, agentWallet);
 
     // e. Fund the agent wallet via AgentFaucet (deployer signs).
     const faucet = new Contract(
