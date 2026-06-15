@@ -12,14 +12,8 @@ import type { AgentDecision, ExecutionResult } from '@/types/engine';
 import type { AgentRecord } from '@/types/agent';
 import type { MarketSnapshot } from '@/types/market';
 
-// Mantle Sepolia's RPC can drop receipts and leave tx.wait() hanging, which used
-// to stall an entire tick. Bound every confirmation.
 const TX_TIMEOUT = 90_000;
 
-// Agent swaps/LP sign with each agent's OWN wallet (independent nonces), so they
-// must NOT take the shared deployer lock — that serialized all 50 agents behind
-// one lock and starved the deployer txs (raids/settlement). Instead bound how
-// many run concurrently so the shared RPC isn't flooded.
 const EXEC_CONCURRENCY = 5;
 let _execActive = 0;
 const _execQueue: Array<() => void> = [];
@@ -80,18 +74,22 @@ async function executeSwap(
             return { txHash: '', success: false, amountIn: '0', amountOut: '0', realizedPnl: 0, error: 'Invalid token' };
         }
 
-        const amountIn = parseEther(decision.params.amountIn);
+        let amountIn = parseEther(decision.params.amountIn);
+
+        const token = new Contract(tokenInAddress, SprawlTokenABI.abi, wallet);
+        const balance: bigint = await token.balanceOf(wallet.address);
+        if (balance < amountIn) amountIn = balance;
+        if (amountIn === 0n) {
+            return { txHash: '', success: false, amountIn: '0', amountOut: '0', realizedPnl: 0, error: 'no balance to swap' };
+        }
 
         // Approve if needed
-        const token = new Contract(tokenInAddress, SprawlTokenABI.abi, wallet);
         const allowance: bigint = await token.allowance(wallet.address, CONTRACTS.SprawlDEX);
         if (allowance < amountIn) {
             const approveTx = await token.approve(CONTRACTS.SprawlDEX, MaxUint256);
             await approveTx.wait(1, TX_TIMEOUT);
         }
 
-        // Floor the output from the live AMM quote (accounts for price impact), so
-        // legitimate trades clear instead of reverting on a spot-price estimate.
         const slipBps = Math.min(Math.max(decision.params.maxSlippageBps ?? 0, 500), 2_000);
         let amountOutMin = 0n;
         try {
@@ -246,6 +244,10 @@ async function executeRaid(
         const wallet = await getAgentWallet(agent.agent_id);
         const cost = parseEther(RAID_COST);
         const sprawl = new Contract(CONTRACTS.SPRAWL, SprawlTokenABI.abi, wallet);
+
+        const balance: bigint = await sprawl.balanceOf(wallet.address);
+        if (balance < cost) return fail('insufficient SPRAWL to raid');
+
         const allowance: bigint = await sprawl.allowance(wallet.address, CONTRACTS.RaidContract);
         if (allowance < cost) {
             await (await sprawl.approve(CONTRACTS.RaidContract, MaxUint256)).wait(1, TX_TIMEOUT);

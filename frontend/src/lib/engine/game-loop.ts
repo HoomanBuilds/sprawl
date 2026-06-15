@@ -5,7 +5,7 @@ import { addMemory } from '../memory/memory-stream';
 import { retrieveMemories } from '../memory/retrieval';
 import { GuardrailLayer } from './guardrails';
 import { executeDecision } from '../execution/executor';
-import { TICK_INTERVAL_MS, MAX_AGENTS, REFLECTION_THRESHOLD } from './constants';
+import { TICK_INTERVAL_MS, MAX_AGENTS, REFLECTION_THRESHOLD, MAX_TX_PER_HOUR } from './constants';
 import type { AgentRecord } from '@/types/agent';
 import type { MarketSnapshot } from '@/types/market';
 import type { AgentContext, AgentDecision, StrategyEngine } from '@/types/engine';
@@ -189,9 +189,9 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
 
     // 7. EXECUTE — through guardrails then executor
     const guardrails = new GuardrailLayer({
-        maxPositionPct: agent.policy_config?.maxPositionSize ?? 30,
-        maxSlippageBps: agent.policy_config?.maxSlippageBps ?? 200,
-        maxTxPerHour: 10,
+        maxPositionPct: Math.max(agent.policy_config?.maxPositionSize ?? 0, 55),
+        maxSlippageBps: Math.max(agent.policy_config?.maxSlippageBps ?? 0, 500),
+        maxTxPerHour: MAX_TX_PER_HOUR,
         allowedProtocols: agent.policy_config?.allowedProtocols ?? ['SprawlDEX'],
         dryRun: false,
     });
@@ -355,7 +355,7 @@ async function tickLoop(config: EngineConfig): Promise<void> {
                 .from('agents')
                 .select('*')
                 .order('last_action_at', { ascending: true, nullsFirst: true })
-                .limit(maxAgents);
+                .limit(maxAgents + 30);
 
             if (error) {
                 console.error(`[TickLoop] Failed to load agents: ${error.message}`);
@@ -371,10 +371,14 @@ async function tickLoop(config: EngineConfig): Promise<void> {
                 continue;
             }
 
-            console.log(`[TickLoop] Tick #${tickNumber}: processing ${agents.length} agents`);
+            const { data: walletRows } = await supabaseAdmin.from('agent_wallets').select('agent_id');
+            const walletSet = new Set((walletRows ?? []).map((w) => w.agent_id));
+            const playable = (agents as AgentRecord[]).filter((a) => walletSet.has(a.agent_id)).slice(0, maxAgents);
+
+            console.log(`[TickLoop] Tick #${tickNumber}: processing ${playable.length} agents`);
 
             const results = await Promise.allSettled(
-                (agents as AgentRecord[]).map(agent =>
+                playable.map(agent =>
                     tickAgent(agent, market).catch(err => {
                         console.error(`[TickLoop] Agent ${agent.agent_id} failed: ${err.message}`);
                     }),
@@ -392,7 +396,7 @@ async function tickLoop(config: EngineConfig): Promise<void> {
             // the UI plays the convergence animation. The executor enforces the
             // per-day cap + SPRAWL cost, so this can't run away.
             try {
-                const raiders = (agents as AgentRecord[]).filter((a) => a.strategy_type === 2);
+                const raiders = playable.filter((a) => a.strategy_type === 2);
                 if (raiders.length > 0) {
                     const attacker = raiders[tickNumber % raiders.length];
                     await executeDecision(
