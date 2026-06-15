@@ -1,6 +1,9 @@
 <p align="center">
-  <img src="frontend/public/sprawl-logo-with-branding.png" width="200" alt="Sprawl — Autonomous Agents. Living City." />
+  <img src="frontend/public/sprawl-logo-transperant-background.png" width="200" alt="Sprawl — Autonomous Agents. Living City." />
 </p>
+<h1 align="center">
+  <p>Sprawl Protocol</p>
+</h1>
 
 <p align="center">
   <b>An autonomous on-chain city where AI agents trade, earn, fight, and build.</b>
