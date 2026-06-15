@@ -12,6 +12,30 @@ import type { AgentDecision, ExecutionResult } from '@/types/engine';
 import type { AgentRecord } from '@/types/agent';
 import type { MarketSnapshot } from '@/types/market';
 
+// Mantle Sepolia's RPC can drop receipts and leave tx.wait() hanging, which used
+// to stall an entire tick. Bound every confirmation.
+const TX_TIMEOUT = 90_000;
+
+// Agent swaps/LP sign with each agent's OWN wallet (independent nonces), so they
+// must NOT take the shared deployer lock — that serialized all 50 agents behind
+// one lock and starved the deployer txs (raids/settlement). Instead bound how
+// many run concurrently so the shared RPC isn't flooded.
+const EXEC_CONCURRENCY = 5;
+let _execActive = 0;
+const _execQueue: Array<() => void> = [];
+async function withExecSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (_execActive >= EXEC_CONCURRENCY) {
+        await new Promise<void>((resolve) => _execQueue.push(resolve));
+    }
+    _execActive++;
+    try {
+        return await fn();
+    } finally {
+        _execActive--;
+        _execQueue.shift()?.();
+    }
+}
+
 export async function executeDecision(
     agent: AgentRecord,
     decision: AgentDecision,
@@ -45,7 +69,7 @@ async function executeSwap(
     decision: AgentDecision,
     market: MarketSnapshot,
 ): Promise<ExecutionResult> {
-    return withTxLock(async () => {
+    return withExecSlot(async () => {
         const wallet = await getAgentWallet(agent.agent_id);
         const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, wallet);
 
@@ -66,11 +90,11 @@ async function executeSwap(
         const allowance: bigint = await token.allowance(wallet.address, CONTRACTS.SprawlDEX);
         if (allowance < amountIn) {
             const approveTx = await token.approve(CONTRACTS.SprawlDEX, MaxUint256);
-            await approveTx.wait();
+            await approveTx.wait(1, TX_TIMEOUT);
         }
 
         const tx = await dex.swap(tokenInAddress, tokenOutAddress, amountIn, amountOutMin);
-        const receipt = await tx.wait();
+        const receipt = await tx.wait(1, TX_TIMEOUT);
 
         // Parse swap event for amountOut
         const swapLog = receipt.logs.find(
@@ -114,7 +138,7 @@ async function executeAddLiquidity(
     agent: AgentRecord,
     decision: AgentDecision,
 ): Promise<ExecutionResult> {
-    return withTxLock(async () => {
+    return withExecSlot(async () => {
         const wallet = await getAgentWallet(agent.agent_id);
         const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, wallet);
 
@@ -128,12 +152,12 @@ async function executeAddLiquidity(
             const allowance: bigint = await tkn.allowance(wallet.address, CONTRACTS.SprawlDEX);
             if (allowance < amt) {
                 const approveTx = await tkn.approve(CONTRACTS.SprawlDEX, MaxUint256);
-                await approveTx.wait();
+                await approveTx.wait(1, TX_TIMEOUT);
             }
         }
 
         const tx = await dex.addLiquidity(tokenAAddress, tokenBAddress, amountA, amountB);
-        const receipt = await tx.wait();
+        const receipt = await tx.wait(1, TX_TIMEOUT);
 
         await recordOnChain(wallet, agent.agent_id, decision);
 
@@ -151,7 +175,7 @@ async function executeRemoveLiquidity(
     agent: AgentRecord,
     decision: AgentDecision,
 ): Promise<ExecutionResult> {
-    return withTxLock(async () => {
+    return withExecSlot(async () => {
         const wallet = await getAgentWallet(agent.agent_id);
         const dex = new Contract(CONTRACTS.SprawlDEX, SprawlDEXABI.abi, wallet);
 
@@ -160,7 +184,7 @@ async function executeRemoveLiquidity(
         const shares = parseEther(decision.params.shares);
 
         const tx = await dex.removeLiquidity(tokenAAddress, tokenBAddress, shares);
-        const receipt = await tx.wait();
+        const receipt = await tx.wait(1, TX_TIMEOUT);
 
         await recordOnChain(wallet, agent.agent_id, decision);
 
@@ -216,11 +240,11 @@ async function executeRaid(
         const sprawl = new Contract(CONTRACTS.SPRAWL, SprawlTokenABI.abi, wallet);
         const allowance: bigint = await sprawl.allowance(wallet.address, CONTRACTS.RaidContract);
         if (allowance < cost) {
-            await (await sprawl.approve(CONTRACTS.RaidContract, MaxUint256)).wait();
+            await (await sprawl.approve(CONTRACTS.RaidContract, MaxUint256)).wait(1, TX_TIMEOUT);
         }
 
         const raid = new Contract(CONTRACTS.RaidContract, RaidContractABI.abi, getDeployerWallet());
-        const receipt = await (await raid.initiateRaid(agent.agent_id, defenderId, wallet.address)).wait();
+        const receipt = await (await raid.initiateRaid(agent.agent_id, defenderId, wallet.address)).wait(1, TX_TIMEOUT);
 
         const iface = new Interface(RaidContractABI.abi);
         let attackerWon = false, attackScore = 0, defenseScore = 0;

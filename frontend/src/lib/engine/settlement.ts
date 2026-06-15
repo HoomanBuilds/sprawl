@@ -85,7 +85,7 @@ export async function settleDaily(agent: AgentRecord): Promise<void> {
     const rewardWei = parseEther(sprawlReward.toString());
     await withTxLock(async () => {
       const tx = await cityReferee.settleDaily(agent.agent_id, pnlWei, rewardWei);
-      await tx.wait();
+      await tx.wait(1, 90_000);
     });
   } catch (err: any) {
     console.error(

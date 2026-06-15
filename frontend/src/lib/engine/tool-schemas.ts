@@ -5,17 +5,17 @@ export const DEFI_TOOL_SCHEMAS: DeepSeekTool[] = [
         type: 'function',
         function: {
             name: 'swap',
-            description: 'Swap one token for another on SprawlDEX. Use this when you want to buy or sell a token.',
+            description: 'Swap one token for another on SprawlDEX. The DEX is a sUSDC hub: every swap MUST have sUSDC on one side. Use sUSDC as tokenIn to buy a token, or sUSDC as tokenOut to sell one. There are no direct pools between two non-sUSDC tokens (e.g. sETH/sSOL); to rotate between them, sell to sUSDC first, then buy the other.',
             parameters: {
                 type: 'object',
                 properties: {
                     tokenIn: {
                         type: 'string',
-                        description: 'Token to sell (sETH, sBTC, sUSDC, sPOL, sSOL, SPRAWL)',
+                        description: 'Token to sell. Must be sUSDC (to buy a token) or the token you are selling FOR sUSDC. One of tokenIn/tokenOut must be sUSDC.',
                     },
                     tokenOut: {
                         type: 'string',
-                        description: 'Token to buy (sETH, sBTC, sUSDC, sPOL, sSOL, SPRAWL)',
+                        description: 'Token to buy. Must be sUSDC (to sell a token) or the token you are buying WITH sUSDC. One of tokenIn/tokenOut must be sUSDC.',
                     },
                     amountIn: {
                         type: 'string',
