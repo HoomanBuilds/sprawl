@@ -125,21 +125,12 @@ export default function LoadingScreen({
         ))}
       </div>
 
-      {/* Logo */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/sprawl-logo-transperant-background.png"
-        alt="Sprawl"
-        className="mb-2 h-24 w-24 sm:h-28 sm:w-28"
-        style={{ imageRendering: "pixelated", filter: `drop-shadow(0 0 14px ${accentColor}88)` }}
-      />
-
       {/* Title */}
       <h1
         className="font-pixel text-3xl tracking-[0.2em] sm:text-4xl"
         style={{ color: accentColor }}
       >
-        THE SPRAWL
+        SPRAWL CITY
       </h1>
 
       {/* Stage message */}
