@@ -1,9 +1,45 @@
 import { Contract, formatEther } from 'ethers';
 import { getMantleSepoliaProvider } from '../ethers-provider';
 import { CONTRACTS } from '../config';
+import { getSupabaseAdmin } from '../supabase';
 import SprawlDEXABI from '@/constants/abi/SprawlDEX.json';
 import SprawlTokenABI from '@/constants/abi/SprawlToken.json';
 import type { MarketSnapshot, PoolState } from '@/types/market';
+
+const SWAP_FEE = 0.003;
+
+async function readTradeStats(): Promise<{
+    volume: Record<string, number>;
+    price1hAgo: Record<string, number>;
+}> {
+    const volume: Record<string, number> = {};
+    const price1hAgo: Record<string, number> = {};
+    try {
+        const since = new Date(Date.now() - 25 * 3_600_000).toISOString();
+        const { data } = await getSupabaseAdmin()
+            .from('trade_history')
+            .select('token_in, token_out, amount_in, amount_out, created_at')
+            .gte('created_at', since)
+            .order('created_at', { ascending: true });
+
+        const oneHourAgo = Date.now() - 3_600_000;
+        const dayAgo = Date.now() - 24 * 3_600_000;
+        for (const t of data ?? []) {
+            const ain = Number(t.amount_in) / 1e18;
+            const aout = Number(t.amount_out) / 1e18;
+            let token: string | null = null, price = 0, usd = 0;
+            if (t.token_in === 'sUSDC') { token = t.token_out; usd = ain; price = aout > 0 ? ain / aout : 0; }
+            else if (t.token_out === 'sUSDC') { token = t.token_in; usd = aout; price = ain > 0 ? aout / ain : 0; }
+            if (!token) continue;
+            const ts = new Date(t.created_at).getTime();
+            if (ts >= dayAgo) volume[token] = (volume[token] ?? 0) + usd;
+            if (ts <= oneHourAgo && price > 0) price1hAgo[token] = price;
+        }
+    } catch (err) {
+        console.warn(`[MarketReader] trade stats unavailable: ${(err as Error).message}`);
+    }
+    return { volume, price1hAgo };
+}
 
 const TOKEN_SYMBOLS = ['sETH', 'sBTC', 'sUSDC', 'sPOL', 'sSOL', 'SPRAWL'] as const;
 
@@ -29,6 +65,7 @@ export async function readMarketContext(): Promise<MarketSnapshot> {
 
     const prices: Record<string, number> = { sUSDC: 1 };
     const pools: PoolState[] = [];
+    const stats = await readTradeStats();
 
     for (const [tokenA, tokenB] of POOL_PAIRS) {
         const addressA = CONTRACTS[tokenA as keyof typeof CONTRACTS];
@@ -45,8 +82,12 @@ export async function readMarketContext(): Promise<MarketSnapshot> {
 
         prices[tokenA] = price;
 
-        const prevPool = lastSnapshot?.pools.find(p => p.name === `${tokenA}/${tokenB}`);
-        const priceChange1h = prevPool ? (price - prevPool.price) / prevPool.price : 0;
+        const p1h = stats.price1hAgo[tokenA];
+        const rawChange = p1h && p1h > 0 ? (price - p1h) / p1h : 0;
+        const priceChange1h = Math.max(-0.5, Math.min(0.5, rawChange));
+        const volume24h = stats.volume[tokenA] ?? 0;
+        const tvl = parseFloat(reserveB) * 2;
+        const apr = tvl > 0 ? Math.min((volume24h * SWAP_FEE * 365 / tvl) * 100, 150) : 0;
 
         pools.push({
             poolId,
@@ -58,9 +99,9 @@ export async function readMarketContext(): Promise<MarketSnapshot> {
             price,
             priceChange1h,
             priceChange24h: 0,
-            volume24h: 0,
-            tvl: parseFloat(reserveB) * 2,
-            apr: 0,
+            volume24h,
+            tvl,
+            apr,
         });
     }
 
