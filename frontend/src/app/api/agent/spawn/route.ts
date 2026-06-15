@@ -20,6 +20,14 @@ const IDENTITY_REGISTRY_ABI = [
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://sprawl.vercel.app";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+// Mantle Sepolia's public RPC can drop receipts and leave tx.wait() hanging
+// forever, which left the spawn UI stuck on "rising" while the agent had already
+// been created. Bound every confirmation so the request always returns.
+const TX_TIMEOUT = 40_000;
+
 interface SpawnBody {
   name?: string;
   strategyType?: number;
@@ -32,6 +40,7 @@ interface SpawnBody {
 
 export async function POST(req: NextRequest) {
   let createdAgentId: number | null = null;
+  let createdWallet: string | null = null;
   const supabase = getSupabaseAdmin();
 
   try {
@@ -101,6 +110,7 @@ export async function POST(req: NextRequest) {
     // a. Generate the agent wallet (not yet persisted — we don't know tokenId).
     const agentWallet = Wallet.createRandom();
     const agentAddress = agentWallet.address;
+    createdWallet = agentAddress;
 
     // b. Register ERC-8004 identity (deployer signs). agentURI uses the wallet
     //    form because the tokenId does not exist yet.
@@ -113,7 +123,7 @@ export async function POST(req: NextRequest) {
     const iface = new Interface(IDENTITY_REGISTRY_ABI);
 
     const registerTx = await registry.register(agentURI, { nonce: nonce++ });
-    const registerReceipt = await registerTx.wait();
+    const registerReceipt = await registerTx.wait(1, TX_TIMEOUT);
 
     let tokenId: number | null = null;
     for (const log of registerReceipt.logs) {
@@ -169,7 +179,7 @@ export async function POST(req: NextRequest) {
       deployer
     );
     const fundTx = await faucet.fundNewAgent(agentAddress, { nonce: nonce++ });
-    await fundTx.wait();
+    await fundTx.wait(1, TX_TIMEOUT);
 
     // e2. Fund the agent wallet with MNT for gas — the faucet only mints tokens,
     //     and the agent signs its own swaps, so it needs gas to trade.
@@ -178,7 +188,7 @@ export async function POST(req: NextRequest) {
       value: parseEther("0.3"),
       nonce: nonce++,
     });
-    await gasTx.wait();
+    await gasTx.wait(1, TX_TIMEOUT);
 
     // f. Register the agent in CityState (deployer signs).
     const cityState = new Contract(
@@ -192,7 +202,7 @@ export async function POST(req: NextRequest) {
       strategyType,
       { nonce: nonce++ }
     );
-    await spawnTx.wait();
+    await spawnTx.wait(1, TX_TIMEOUT);
 
     // g. Record the spawn in the activity feed.
     await supabase.from("activity_feed").insert({
@@ -240,6 +250,8 @@ export async function POST(req: NextRequest) {
       {
         error: `Spawn failed: ${message}`,
         agentId: createdAgentId,
+        walletAddress: createdWallet,
+        erc8004TokenId: createdAgentId,
         partial: createdAgentId !== null,
       },
       { status: 500 }

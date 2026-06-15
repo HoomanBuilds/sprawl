@@ -131,7 +131,10 @@ export default function SpawnPage() {
       if (res.status === 401) {
         throw new Error("Please sign in with your wallet first.");
       }
-      if (!res.ok) {
+      // A later on-chain confirmation can time out on the flaky RPC after the
+      // agent already exists (identity minted, row created, building risen).
+      // Treat that as a spawn, not a failure.
+      if (!res.ok && !(data.partial && data.agentId)) {
         throw new Error(data.error || `Spawn failed (HTTP ${res.status})`);
       }
 
