@@ -81,9 +81,6 @@ async function executeSwap(
         }
 
         const amountIn = parseEther(decision.params.amountIn);
-        const amountOutMin = decision.params.amountOutMin
-            ? parseEther(decision.params.amountOutMin)
-            : 0n;
 
         // Approve if needed
         const token = new Contract(tokenInAddress, SprawlTokenABI.abi, wallet);
@@ -91,6 +88,17 @@ async function executeSwap(
         if (allowance < amountIn) {
             const approveTx = await token.approve(CONTRACTS.SprawlDEX, MaxUint256);
             await approveTx.wait(1, TX_TIMEOUT);
+        }
+
+        // Floor the output from the live AMM quote (accounts for price impact), so
+        // legitimate trades clear instead of reverting on a spot-price estimate.
+        const slipBps = Math.min(Math.max(decision.params.maxSlippageBps ?? 0, 500), 2_000);
+        let amountOutMin = 0n;
+        try {
+            const quoted: bigint = await dex.getAmountOut(tokenInAddress, tokenOutAddress, amountIn);
+            amountOutMin = (quoted * BigInt(10_000 - slipBps)) / 10_000n;
+        } catch {
+            amountOutMin = decision.params.amountOutMin ? parseEther(decision.params.amountOutMin) : 0n;
         }
 
         const tx = await dex.swap(tokenInAddress, tokenOutAddress, amountIn, amountOutMin);
