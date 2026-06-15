@@ -3,7 +3,7 @@ import type { StrategyEngine, AgentContext, AgentDecision } from '@/types/engine
 const CANNED_STRATEGIES: Record<string, (ctx: AgentContext) => AgentDecision> = {
     'momentum': (ctx) => {
         const ethPool = ctx.market.pools.find(p => p.tokenA === 'sETH');
-        if (ethPool && ethPool.priceChange1h > 0.02) {
+        if (ethPool && ethPool.priceChange1h > 0.005) {
             const usdcBalance = ctx.portfolio.holdings.sUSDC ?? 0;
             if (usdcBalance > 100) {
                 const amount = Math.min(usdcBalance * 0.2, 500);
@@ -20,7 +20,7 @@ const CANNED_STRATEGIES: Record<string, (ctx: AgentContext) => AgentDecision> = 
 
     'mean_reversion': (ctx) => {
         for (const pool of ctx.market.pools) {
-            if (pool.priceChange1h < -0.05) {
+            if (pool.priceChange1h < -0.015) {
                 const usdcBalance = ctx.portfolio.holdings.sUSDC ?? 0;
                 if (usdcBalance > 100) {
                     const amount = Math.min(usdcBalance * 0.15, 300);
@@ -64,7 +64,7 @@ const CANNED_STRATEGIES: Record<string, (ctx: AgentContext) => AgentDecision> = 
         const totalValue = ctx.portfolio.totalValueUSD;
         const usdcPct = ((ctx.portfolio.holdings.sUSDC ?? 0) / totalValue) * 100;
 
-        if (usdcPct > 60) {
+        if (usdcPct > 40) {
             const bestMover = ctx.market.pools
                 .filter(p => p.priceChange1h > 0)
                 .sort((a, b) => b.priceChange1h - a.priceChange1h)[0];
@@ -86,7 +86,7 @@ const CANNED_STRATEGIES: Record<string, (ctx: AgentContext) => AgentDecision> = 
         const bestMover = ctx.market.pools
             .sort((a, b) => Math.abs(b.priceChange1h) - Math.abs(a.priceChange1h))[0];
 
-        if (bestMover && Math.abs(bestMover.priceChange1h) > 0.01) {
+        if (bestMover && Math.abs(bestMover.priceChange1h) > 0.004) {
             const usdcBalance = ctx.portfolio.holdings.sUSDC ?? 0;
             if (usdcBalance > 50) {
                 const amount = Math.min(usdcBalance * 0.3, 1000);
@@ -106,7 +106,7 @@ const CANNED_STRATEGIES: Record<string, (ctx: AgentContext) => AgentDecision> = 
             ? (ctx.portfolio.unrealizedPnl / ctx.portfolio.totalValueUSD) * 100
             : 0;
 
-        if (pnlPct > 10) {
+        if (pnlPct > 4) {
             for (const [token, amount] of Object.entries(ctx.portfolio.holdings)) {
                 if (token === 'sUSDC' || amount < 0.001) continue;
                 const sellAmount = (amount * 0.5).toFixed(4);

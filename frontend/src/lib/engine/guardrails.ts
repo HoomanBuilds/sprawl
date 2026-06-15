@@ -5,8 +5,8 @@ import { supabaseAdmin } from '../supabase';
 import { MAX_TX_PER_HOUR, DEFAULT_SLIPPAGE_BPS } from './constants';
 
 const DEFAULT_CONFIG: GuardrailConfig = {
-    maxPositionPct: 30,
-    maxSlippageBps: 200,
+    maxPositionPct: 60,
+    maxSlippageBps: 600,
     maxTxPerHour: MAX_TX_PER_HOUR,
     allowedProtocols: ['SprawlDEX'],
     dryRun: false,

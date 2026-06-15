@@ -147,7 +147,7 @@ export async function tickAgent(agent: AgentRecord, market: MarketSnapshot): Pro
             persona: agent.persona ?? 'A balanced DeFi trading agent',
             strategy_type: agent.strategy_type as 0 | 1 | 2,
             goal: 'Maximize $SPRAWL earnings through profitable DeFi trading on SprawlDEX',
-            constraints: `Max position: ${agent.policy_config?.maxPositionSize ?? 30}% of portfolio. Max slippage: ${agent.policy_config?.maxSlippageBps ?? 200}bps.`,
+            constraints: `Max position: ${Math.max(agent.policy_config?.maxPositionSize ?? 0, 55)}% of portfolio. Max slippage: ${Math.max(agent.policy_config?.maxSlippageBps ?? 0, 500)}bps. Be active: take a position whenever you see even a small edge rather than holding.`,
         },
         portfolio: {
             holdings: portfolio,
