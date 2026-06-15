@@ -10,7 +10,7 @@ import RoamingAgents from "./RoamingAgents";
 import Streetscape from "./Streetscape";
 import type { FocusInfo } from "./CityScene";
 import type { CityBuilding } from "@/types/city";
-import { seededRandom, generateStreetscape } from "@/lib/city-layout";
+import { seededRandom, generateStreetscape, cityBounds } from "@/lib/city-layout";
 import { usePerfMode } from "@/lib/perfMode";
 import { useAgentPresence } from "@/hooks/useAgentPresence";
 
@@ -430,14 +430,43 @@ function CameraFocus({
 
 // ─── Ground ──────────────────────────────────────────────────
 
-function Ground({ color, grid1, grid2 }: { color: string; grid1: string; grid2: string }) {
+function Ground({
+  color,
+  grid1,
+  grid2,
+  buildingCount,
+}: {
+  color: string;
+  grid1: string;
+  grid2: string;
+  buildingCount: number;
+}) {
+  // Base is a solid platform sized to the city, not a fixed huge plane: the grid
+  // hugs the footprint, the slab adds a green border around it, and both grow and
+  // re-center automatically as agents are added.
+  const { gridSize, divisions, baseSize, thick, cx, cz } = useMemo(() => {
+    const { cx, cz, spanX, spanZ } = cityBounds(buildingCount);
+    const GRID_MARGIN = 140;
+    const BASE_BORDER = 90;
+    const CELL = 24;
+    const gridSize = Math.max(spanX, spanZ) + GRID_MARGIN * 2;
+    return {
+      gridSize,
+      divisions: Math.max(8, Math.round(gridSize / CELL)),
+      baseSize: gridSize + BASE_BORDER * 2,
+      thick: 40,
+      cx,
+      cz,
+    };
+  }, [buildingCount]);
+
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1, 0]}>
-        <planeGeometry args={[20000, 20000]} />
+      <mesh position={[cx, -thick / 2 - 0.4, cz]}>
+        <boxGeometry args={[baseSize, thick, baseSize]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.15} roughness={0.95} />
       </mesh>
-      <gridHelper args={[4000, 200, grid1, grid2]} position={[0, -0.5, 0]} />
+      <gridHelper args={[gridSize, divisions, grid1, grid2]} position={[cx, -0.3, cz]} />
     </group>
   );
 }
@@ -611,7 +640,7 @@ export default function CityCanvas({
         <OrbitScene buildings={buildings} focusedBuilding={focusedBuilding ?? null} autoOrbit={autoOrbit} />
       )}
 
-      <Ground key={`ground-${theme}`} color={t.groundColor} grid1={t.grid1} grid2={t.grid2} />
+      <Ground key={`ground-${theme}`} color={t.groundColor} grid1={t.grid1} grid2={t.grid2} buildingCount={buildings.length} />
 
       {/* Roads, sidewalks, lamps, trees, cars */}
       <Streetscape

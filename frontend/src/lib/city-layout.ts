@@ -37,16 +37,39 @@ export function seededRandom(seed: number): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
+// String -> 32-bit seed (FNV-1a), used to seed per-district shuffles.
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Deterministic Fisher-Yates shuffle (copied from git-city) so a district's
+// buildings land in an organic, repeatable mix of tall and short rather than
+// sorted bands.
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const r = [...arr];
+  for (let i = r.length - 1; i > 0; i--) {
+    const j = Math.floor(seededRandom(seed + i * 7919) * (i + 1));
+    [r[i], r[j]] = [r[j], r[i]];
+  }
+  return r;
+}
+
 // ─── City Layout Constants (from git-city) ─────────────────────
 
 const BLOCK_SIZE = 4;
 const LOT_W = 38;
 const LOT_D = 32;
-const ALLEY_W = 3;
+const ALLEY_W = 10; // gap between buildings within a block (wider = airier city)
 const STREET_W = 12;
 
 const BLOCK_FOOTPRINT_X = BLOCK_SIZE * LOT_W + (BLOCK_SIZE - 1) * ALLEY_W; // 161
 const BLOCK_FOOTPRINT_Z = BLOCK_SIZE * LOT_D + (BLOCK_SIZE - 1) * ALLEY_W; // 137
+const LOTS_PER_BLOCK = BLOCK_SIZE * BLOCK_SIZE; // 16
 
 const MAX_BUILDING_HEIGHT = 320;
 const MIN_BUILDING_HEIGHT = 30;
@@ -84,30 +107,34 @@ export function wealthNorm(agent: AgentRecord): number {
   return Math.max(0, Math.min(1, n));
 }
 
-// Footprints must stay inside the lot or buildings merge. Lot pitch is
-// LOT_W+ALLEY_W = 41 in x and LOT_D+ALLEY_W = 35 in z, so width and depth get
-// separate caps (plus the +-1.5 jitter) that leave a clear gap on every side.
+// Footprints scale with wealth from a small starter to a wide whale, while the
+// widened alley keeps a clear gap. Lot pitch is LOT_W+ALLEY_W = 48 in x and
+// LOT_D+ALLEY_W = 42 in z, so a max-wealth building still leaves about 12 units
+// of gap per axis, and typical agents leave far more.
 const MIN_FOOTPRINT = 12;
-const MAX_WIDTH = 34; // x pitch 41
-const MAX_DEPTH = 28; // z pitch 35 (tighter)
+const MAX_WIDTH = 36; // x pitch 48 -> ~12 gap, width grows 12 -> 36
+const MAX_DEPTH = 30; // z pitch 42 -> ~12 gap, depth grows 12 -> 30
 
-export function computeBuildingHeight(agent: AgentRecord): number {
-  return MIN_BUILDING_HEIGHT + wealthNorm(agent) * HEIGHT_RANGE;
+// Size is driven by `norm` (0..1). generateCityLayout passes the agent's wealth
+// rank so every building gets a distinct, evenly spread size; the default falls
+// back to the absolute wealth scale for any standalone caller.
+export function computeBuildingHeight(agent: AgentRecord, norm = wealthNorm(agent)): number {
+  return MIN_BUILDING_HEIGHT + norm * HEIGHT_RANGE;
 }
 
-export function computeBuildingWidth(agent: AgentRecord): number {
+export function computeBuildingWidth(agent: AgentRecord, norm = wealthNorm(agent)): number {
   const jitter = (seededRandom(agent.agent_id * 7919) - 0.5) * 3;
   return Math.max(
     8,
-    Math.min(MAX_WIDTH, Math.round(MIN_FOOTPRINT + wealthNorm(agent) * (MAX_WIDTH - MIN_FOOTPRINT) + jitter))
+    Math.min(MAX_WIDTH, Math.round(MIN_FOOTPRINT + norm * (MAX_WIDTH - MIN_FOOTPRINT) + jitter))
   );
 }
 
-export function computeBuildingDepth(agent: AgentRecord): number {
+export function computeBuildingDepth(agent: AgentRecord, norm = wealthNorm(agent)): number {
   const jitter = (seededRandom(agent.agent_id) - 0.5) * 3;
   return Math.max(
     8,
-    Math.min(MAX_DEPTH, Math.round(MIN_FOOTPRINT + wealthNorm(agent) * (MAX_DEPTH - MIN_FOOTPRINT) + jitter))
+    Math.min(MAX_DEPTH, Math.round(MIN_FOOTPRINT + norm * (MAX_DEPTH - MIN_FOOTPRINT) + jitter))
   );
 }
 
@@ -200,25 +227,38 @@ export function generateCityLayout(agents: AgentRecord[]): {
   buildings: CityBuilding[];
 } {
   const buildings: CityBuilding[] = [];
+  const N = agents.length;
+  if (N === 0) return { buildings };
 
-  // Sort by current wealth so the richest, biggest buildings sit at the center.
-  const sorted = [...agents].sort(
-    (a, b) => computeWealth(b) - computeWealth(a)
-  );
+  // Rank every agent by current wealth. Size is driven by this percentile rank
+  // (richest -> 1, poorest -> 0) so every building gets a distinct, evenly
+  // spread height with no flat bands, even when agents share the same wealth.
+  const byWealth = [...agents].sort((a, b) => computeWealth(b) - computeWealth(a));
+  const sizeNorm = new Map<number, number>();
+  byWealth.forEach((a, i) => sizeNorm.set(a.agent_id, N > 1 ? 1 - i / (N - 1) : 1));
 
   // The wealthiest agent (tallest building) gets landmark treatment (crown + beacon).
-  let landmarkId = -1;
-  let topWealth = -Infinity;
-  for (const a of agents) {
-    const w = computeWealth(a);
-    if (w > topWealth) {
-      topWealth = w;
-      landmarkId = a.agent_id;
-    }
+  const landmarkId = byWealth[0].agent_id;
+
+  // Hybrid placement (matches git-city): the richest form a sorted downtown core
+  // at the center; everyone else is grouped by district and shuffled so tall and
+  // short buildings intersperse organically instead of forming graded bands.
+  const downtown = byWealth.slice(0, Math.min(LOTS_PER_BLOCK, N));
+  const downtownSet = new Set(downtown.map((a) => a.agent_id));
+  const districts = new Map<string, AgentRecord[]>();
+  for (const a of byWealth) {
+    if (downtownSet.has(a.agent_id)) continue;
+    const d = inferDistrict(a);
+    let list = districts.get(d);
+    if (!list) districts.set(d, (list = []));
+    list.push(a);
+  }
+  const placement: AgentRecord[] = [...downtown];
+  for (const d of [...districts.keys()].sort()) {
+    placement.push(...seededShuffle(districts.get(d)!, hashStr(d)));
   }
 
-  const LOTS_PER_BLOCK = BLOCK_SIZE * BLOCK_SIZE; // 16
-  const totalBlocks = Math.ceil(sorted.length / LOTS_PER_BLOCK);
+  const totalBlocks = Math.ceil(placement.length / LOTS_PER_BLOCK);
 
   for (let blockIdx = 0; blockIdx < totalBlocks; blockIdx++) {
     const [bx, bz] = spiralCoord(blockIdx);
@@ -227,18 +267,19 @@ export function generateCityLayout(agents: AgentRecord[]): {
 
     for (let lot = 0; lot < LOTS_PER_BLOCK; lot++) {
       const agentIdx = blockIdx * LOTS_PER_BLOCK + lot;
-      if (agentIdx >= sorted.length) break;
+      if (agentIdx >= placement.length) break;
 
-      const agent = sorted[agentIdx];
+      const agent = placement[agentIdx];
       const lotRow = Math.floor(lot / BLOCK_SIZE);
       const lotCol = lot % BLOCK_SIZE;
       const x = blockWorldX + lotCol * (LOT_W + ALLEY_W);
       const z = blockWorldZ + lotRow * (LOT_D + ALLEY_W);
 
-      // Size is current wealth — height, width and depth scale together.
-      const height = computeBuildingHeight(agent);
-      const width = computeBuildingWidth(agent);
-      const depth = computeBuildingDepth(agent);
+      // Size is the agent's wealth rank — height, width and depth scale together.
+      const norm = sizeNorm.get(agent.agent_id) ?? 0;
+      const height = computeBuildingHeight(agent, norm);
+      const width = computeBuildingWidth(agent, norm);
+      const depth = computeBuildingDepth(agent, norm);
       const litPercentage = computeLitPercentage(agent);
       const tint = computeBuildingTint(agent);
       const glow = computeGlow(agent);
@@ -295,6 +336,32 @@ const LOT_PITCH_X = LOT_W + ALLEY_W; // 41
 const LOT_PITCH_Z = LOT_D + ALLEY_W; // 35
 const BLOCK_STEP_X = BLOCK_FOOTPRINT_X + STREET_W; // 173 (block + surrounding street)
 const BLOCK_STEP_Z = BLOCK_FOOTPRINT_Z + STREET_W; // 149
+
+// Bounding box of the occupied city for a given building count. The ground grid
+// uses this so the base hugs the city and grows as agents are added, instead of
+// a fixed huge plane that dwarfs a small city.
+export function cityBounds(buildingCount: number): {
+  cx: number;
+  cz: number;
+  spanX: number;
+  spanZ: number;
+} {
+  if (buildingCount <= 0) {
+    return { cx: 0, cz: 0, spanX: BLOCK_STEP_X, spanZ: BLOCK_STEP_Z };
+  }
+  const totalBlocks = Math.ceil(buildingCount / LOTS_PER_BLOCK);
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < totalBlocks; i++) {
+    const [bx, bz] = spiralCoord(i);
+    const cx = bx * BLOCK_STEP_X + ((BLOCK_SIZE - 1) / 2) * LOT_PITCH_X;
+    const cz = bz * BLOCK_STEP_Z + ((BLOCK_SIZE - 1) / 2) * LOT_PITCH_Z;
+    minX = Math.min(minX, cx - BLOCK_STEP_X / 2);
+    maxX = Math.max(maxX, cx + BLOCK_STEP_X / 2);
+    minZ = Math.min(minZ, cz - BLOCK_STEP_Z / 2);
+    maxZ = Math.max(maxZ, cz + BLOCK_STEP_Z / 2);
+  }
+  return { cx: (minX + maxX) / 2, cz: (minZ + maxZ) / 2, spanX: maxX - minX, spanZ: maxZ - minZ };
+}
 
 export type DecorationType =
   | "asphalt"
