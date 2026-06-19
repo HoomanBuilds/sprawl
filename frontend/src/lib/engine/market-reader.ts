@@ -53,7 +53,7 @@ const POOL_PAIRS: Array<[string, string]> = [
 
 let lastSnapshot: MarketSnapshot | null = null;
 let lastSnapshotTime = 0;
-const CACHE_TTL_MS = 10_000;
+const CACHE_TTL_MS = 30_000;
 
 export async function readMarketContext(): Promise<MarketSnapshot> {
     if (lastSnapshot && Date.now() - lastSnapshotTime < CACHE_TTL_MS) {

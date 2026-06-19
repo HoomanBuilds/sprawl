@@ -345,7 +345,7 @@ async function catchUp(
 // free-tier RPC trips per-second limits and floods 503s).
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL_MS = 6000;
+const POLL_INTERVAL_MS = 30000;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {

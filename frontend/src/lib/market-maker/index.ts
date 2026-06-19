@@ -203,8 +203,8 @@ export async function runArbCycle(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function marketMakerLoop(signal: AbortSignal): Promise<void> {
-    const INTERVAL_MS = 30_000;
-    console.log('[ArbBot] Starting market maker loop (free market, no peg, 30s interval)');
+    const INTERVAL_MS = 120_000;
+    console.log('[ArbBot] Starting market maker loop (free market, no peg, 120s interval)');
 
     while (!signal.aborted) {
         try {
