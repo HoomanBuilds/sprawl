@@ -382,12 +382,22 @@ export async function startIndexer(signal: AbortSignal): Promise<void> {
         console.log(`[Indexer] Cold start — cursor seeded to block ${seed} (tip ${tipNow})`);
     }
 
+    // When far behind, skip ahead instead of grinding a huge getLogs backlog.
+    const MAX_GAP = 1000;
+
     while (!signal.aborted) {
         try {
-            const from = (await getLastBlock()) + 1;
+            let from = (await getLastBlock()) + 1;
             const tip = await provider.getBlockNumber();
-            if (tip >= from) {
-                await catchUp(cityState, dex, raid, from, tip);
+            if (tip - from > MAX_GAP) {
+                const skipTo = tip - 100;
+                await setLastBlock(skipTo - 1);
+                console.warn(`[Indexer] ${tip - from} blocks behind — skipping to ${skipTo} (abandoning backlog)`);
+                from = skipTo;
+            }
+            const end = Math.min(tip, from + MAX_GAP);
+            if (end >= from) {
+                await catchUp(cityState, dex, raid, from, end);
             }
         } catch (err) {
             console.error(`[Indexer] Poll cycle failed: ${(err as Error).message}`);

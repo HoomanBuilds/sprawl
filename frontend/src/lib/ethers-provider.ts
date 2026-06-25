@@ -1,15 +1,13 @@
 import { JsonRpcProvider, FallbackProvider, Network, Wallet } from "ethers";
-import { MANTLE_SEPOLIA_RPC, MANTLE_SEPOLIA_CHAIN_ID } from "./config";
+import { MANTLE_SEPOLIA_CHAIN_ID } from "./config";
 
 const NETWORK = new Network("mantle-sepolia", MANTLE_SEPOLIA_CHAIN_ID);
 
-// Alchemy primary + public RPCs as fallbacks. FallbackProvider (quorum 1) tries
-// them in priority order, so only the primary is hit per call and the next is
-// used on failure/stall — keeping the engine alive if Alchemy is throttled.
+// Reachable RPCs only — a dead provider in the set stalls FallbackProvider
+// failover, and Alchemy's account-level monthly cap is currently exhausted.
 const RPC_ENDPOINTS: { url: string; priority: number }[] = [
-  { url: MANTLE_SEPOLIA_RPC, priority: 1 },
-  { url: "https://mantle-sepolia.drpc.org", priority: 2 },
-  { url: "https://rpc.sepolia.mantle.xyz", priority: 3 },
+  { url: "https://mantle-sepolia.drpc.org", priority: 1 },
+  { url: "https://rpc.sepolia.mantle.xyz", priority: 2 },
 ];
 
 let cachedProvider: FallbackProvider | null = null;
