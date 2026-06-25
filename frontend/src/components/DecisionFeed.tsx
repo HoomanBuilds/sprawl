@@ -108,12 +108,12 @@ export default function DecisionFeed({ contained = false }: { contained?: boolea
       supabase
         .from("activity_feed")
         .select("id, event_type, actor_id, target_id, metadata, created_at")
+        .not("actor_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(MAX_EVENTS)
         .then(({ data }) => {
           if (cancelled || !data) return;
-          // Hide market-maker / price-keeper activity (null actor "The City").
-          setEvents((data as FeedEvent[]).filter((e) => e.actor_id != null));
+          setEvents(data as FeedEvent[]);
         });
     };
     loadFeed();
